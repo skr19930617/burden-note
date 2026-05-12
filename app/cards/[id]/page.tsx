@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Stack from "@mui/material/Stack";
@@ -22,35 +22,27 @@ import {
   labelOf,
   labelsOf,
 } from "@/lib/constants";
-import { AiChip } from "@/components/AiBadge";
+import { AiChip, AiTooltip } from "@/components/AiBadge";
+import { sharingSchema, type Card, type Sharing } from "@/lib/contracts";
 import {
-  cardSingleResponseSchema,
-  gratitudeSingleResponseSchema,
-  sharingSchema,
-  type Card,
-  type Sharing,
-} from "@/lib/contracts";
+  useGetCardQuery,
+  useUpdateCardMutation,
+  useDeleteCardMutation,
+  useRephraseCardMutation,
+  useSendAppreciationMutation,
+} from "@/lib/store";
 
 type CardDetail = Card;
 
 export default function CardDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [card, setCard] = useState<CardDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: card, isLoading } = useGetCardQuery(params.id);
+  const [updateCard] = useUpdateCardMutation();
+  const [deleteCard] = useDeleteCardMutation();
   const [busy, setBusy] = useState<Sharing | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/cards/${params.id}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((raw: unknown) => {
-        const parsed = cardSingleResponseSchema.parse(raw);
-        setCard(parsed.card);
-      })
-      .finally(() => setLoading(false));
-  }, [params.id]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <Typography variant="body2" color="text.secondary">
         読み込み中…
@@ -62,23 +54,17 @@ export default function CardDetailPage() {
   async function setSharing(stage: Sharing) {
     if (!card) return;
     setBusy(stage);
-    const res = await fetch(`/api/cards/${card.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sharing: stage }),
-    });
-    if (res.ok) {
-      const raw: unknown = await res.json();
-      const parsed = cardSingleResponseSchema.parse(raw);
-      setCard(parsed.card);
+    try {
+      await updateCard({ id: card.id, patch: { sharing: stage } }).unwrap();
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
   }
 
   async function remove() {
     if (!card) return;
     if (!confirm("このメモを削除しますか？")) return;
-    await fetch(`/api/cards/${card.id}`, { method: "DELETE" });
+    await deleteCard(card.id).unwrap();
     router.push("/cards");
   }
 
@@ -132,7 +118,9 @@ export default function CardDetailPage() {
         </Stack>
       </Paper>
 
-      {card.shareText && (
+      {card.sharing === "candidate" && <ShareEditor card={card} />}
+
+      {card.sharing === "shared" && card.shareText && (
         <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
           <Stack direction="row" alignItems="center" spacing={1}>
             <Typography variant="h3">共有用に整えた文</Typography>
@@ -216,21 +204,251 @@ export default function CardDetailPage() {
             </Button>
           ))}
         </Stack>
-        {card.sharing === "candidate" && (
-          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
-            <Button
-              component={Link}
-              href={`/share?card=${card.id}`}
-              variant="contained"
-              size="small"
-              disableElevation
-            >
-              共有用に整える
-            </Button>
-          </Stack>
-        )}
       </Paper>
     </Stack>
+  );
+}
+
+function ShareEditor({ card }: { card: CardDetail }) {
+  const router = useRouter();
+  const [rephraseCard, { isLoading: rephrasing }] = useRephraseCardMutation();
+  const [updateCard] = useUpdateCardMutation();
+  const [draft, setDraft] = useState(card.shareText ?? "");
+  const [selfCare, setSelfCare] = useState(card.selfCare ?? "");
+  const [appreciation, setAppreciation] = useState(card.appreciation ?? "");
+  const [adviceTip, setAdviceTip] = useState(card.adviceTip ?? "");
+  const [adapter, setAdapter] = useState<string | null>(null);
+  const [insight, setInsight] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<"share" | "cancel" | null>(null);
+
+  async function runRephrase() {
+    setError(null);
+    try {
+      const result = await rephraseCard(card.id).unwrap();
+      setAdapter(result.adapter);
+      setDraft(result.sharedText);
+      setInsight(result.oneLineInsight);
+      setSelfCare(result.selfCare);
+      setAppreciation(result.appreciation);
+      setAdviceTip(result.adviceTip);
+    } catch (err) {
+      const msg =
+        err && typeof err === "object" && "data" in err
+          ? (() => {
+              const d = (err as { data: unknown }).data;
+              if (
+                d &&
+                typeof d === "object" &&
+                "error" in d &&
+                typeof (d as { error: unknown }).error === "string"
+              ) {
+                return (d as { error: string }).error;
+              }
+              return "LLM 呼び出しに失敗しました";
+            })()
+          : err instanceof Error
+          ? err.message
+          : "失敗しました";
+      setError(msg);
+    }
+  }
+
+  async function markShared() {
+    setSubmitting("share");
+    try {
+      await updateCard({
+        id: card.id,
+        patch: { sharing: "shared", shareText: draft },
+      }).unwrap();
+      router.push("/shared");
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
+  async function backToPrivate() {
+    setSubmitting("cancel");
+    try {
+      await updateCard({ id: card.id, patch: { sharing: "private" } }).unwrap();
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
+  const hasDraft = draft.trim().length > 0;
+
+  return (
+    <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Typography variant="h3">共有用に整える</Typography>
+          <AiChip tooltip="AI があなたの生のメモを読み、相手に責められた印象になりにくい表現へ整えます。生のメモ自体は変わりません。" />
+        </Stack>
+        {hasDraft && (
+          <AiTooltip title="AI を呼び出して言い換え案を作ります。何度でも作り直せます。">
+            <Button size="small" variant="outlined" onClick={runRephrase} disabled={rephrasing}>
+              {rephrasing ? "AI 整え中…" : "もう一度 AI で整える"}
+            </Button>
+          </AiTooltip>
+        )}
+      </Stack>
+
+      {!hasDraft ? (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            mt: 1,
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "divider",
+            bgcolor: "background.default",
+          }}
+        >
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.7 }}>
+            生のメモは責められた印象になりやすいので、
+            <br />
+            AI に「相手に見せる用の文」を作ってもらえます。
+            <br />
+            作った後は自分で読み直し、手で直してから送れます。
+          </Typography>
+          <AiTooltip title="AI が言い換え案を作ります。何度でも作り直せます。送る前に手で直せます。">
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                disableElevation
+                onClick={runRephrase}
+                disabled={rephrasing}
+              >
+                {rephrasing ? "AI が下書きを作っています…" : "AI で言い換え案を作る"}
+              </Button>
+            </span>
+          </AiTooltip>
+        </Paper>
+      ) : (
+        <>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            下のテキストは AI の下書き。送る前に必ず自分で読み直して、手で直して構いません。
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            minRows={6}
+            placeholder="ここに、相手に見せるテキストが入ります。AI の下書きは手で直してOK。"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </>
+      )}
+      {adapter && (
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+          <AiChip
+            label={adapter === "template" ? "AI なし" : `AI: ${adapter}`}
+            tooltip={
+              adapter === "template"
+                ? "現在は AI を使っていません (xAI キーが未設定のため、簡易テンプレートで言い換えました)。.env に XAI_API_KEY を入れると本物の AI が動きます。"
+                : `現在は ${adapter} のモデルが言い換えを生成しました。`
+            }
+          />
+          <Typography variant="caption" color="text.secondary">
+            この下書きの生成元
+          </Typography>
+        </Stack>
+      )}
+      {insight && (
+        <Alert severity="info" sx={{ mt: 1.5 }}>
+          {insight}
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mt: 1.5 }}>
+          {error}
+        </Alert>
+      )}
+
+      {(selfCare || appreciation || adviceTip) && (
+        <Stack spacing={1.5} sx={{ mt: 2 }}>
+          {selfCare && (
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, borderColor: "rgba(184, 138, 138, 0.6)", bgcolor: "rgba(184, 138, 138, 0.08)" }}
+            >
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: "#8b5e5e" }}>
+                  自分への労いの一言
+                </Typography>
+                <AiChip
+                  label="AI 提案"
+                  tooltip="これは相手に送る言葉ではなく、AI から書いた本人 (あなた) への労いです。共有しなくて大丈夫。"
+                />
+              </Stack>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                {selfCare}
+              </Typography>
+            </Paper>
+          )}
+
+          {appreciation && (
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, borderColor: "secondary.main", bgcolor: "rgba(138, 160, 145, 0.08)" }}
+            >
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: "secondary.dark" }}>
+                  相手への労いの一言
+                </Typography>
+                <AiChip
+                  label="AI 提案"
+                  tooltip="AI があなたの入力をもとに、相手に渡せる労いの一言を提案しました。"
+                />
+              </Stack>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                {appreciation}
+              </Typography>
+            </Paper>
+          )}
+
+          {adviceTip && (
+            <Paper variant="outlined" sx={{ p: 2, borderColor: "divider", bgcolor: "background.default" }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  次に話すときのコツ
+                </Typography>
+                <AiChip
+                  label="AI 提案"
+                  tooltip="次に2人で話すときに穏やかに進めるための一言です。AI の提案なので、合わなければ無視して構いません。"
+                />
+              </Stack>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                {adviceTip}
+              </Typography>
+            </Paper>
+          )}
+        </Stack>
+      )}
+
+      <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 2 }}>
+        <Button
+          variant="text"
+          size="small"
+          onClick={backToPrivate}
+          disabled={submitting !== null}
+        >
+          {submitting === "cancel" ? "…" : "やめる (自分だけに戻す)"}
+        </Button>
+        <Button
+          variant="contained"
+          size="small"
+          disableElevation
+          disabled={!draft.trim() || submitting !== null}
+          onClick={markShared}
+        >
+          {submitting === "share" ? "…" : "2人で見る に出す"}
+        </Button>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -242,37 +460,35 @@ function SendAppreciationCard({
   appreciation: string;
 }) {
   const [draft, setDraft] = useState(appreciation);
-  const [sending, setSending] = useState(false);
+  const [sendAppreciation, { isLoading: sending }] = useSendAppreciationMutation();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
   async function send() {
-    setSending(true);
     setError(null);
     try {
-      const r = await fetch(`/api/cards/${cardId}/send-appreciation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: draft.trim() }),
-      });
-      const raw: unknown = await r.json();
-      if (!r.ok) {
-        const msg =
-          typeof raw === "object" &&
-          raw !== null &&
-          "error" in raw &&
-          typeof (raw as { error: unknown }).error === "string"
-            ? (raw as { error: string }).error
-            : "送信に失敗しました";
-        throw new Error(msg);
-      }
-      gratitudeSingleResponseSchema.parse(raw);
+      await sendAppreciation({ cardId, text: draft.trim() }).unwrap();
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "送信に失敗しました");
-    } finally {
-      setSending(false);
+      const msg =
+        err && typeof err === "object" && "data" in err
+          ? (() => {
+              const d = (err as { data: unknown }).data;
+              if (
+                d &&
+                typeof d === "object" &&
+                "error" in d &&
+                typeof (d as { error: unknown }).error === "string"
+              ) {
+                return (d as { error: string }).error;
+              }
+              return "送信に失敗しました";
+            })()
+          : err instanceof Error
+          ? err.message
+          : "送信に失敗しました";
+      setError(msg);
     }
   }
 

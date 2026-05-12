@@ -10,9 +10,8 @@ import Box from "@mui/material/Box";
 import { UserSwitcher } from "./UserSwitcher";
 
 const NAV = [
-  { href: "/", label: "今日" },
-  { href: "/cards", label: "メモ" },
-  { href: "/share", label: "共有" },
+  { href: "/", label: "書く" },
+  { href: "/cards", label: "自分のメモ" },
   { href: "/shared", label: "2人で見る" },
   { href: "/review", label: "ふりかえり" },
 ];

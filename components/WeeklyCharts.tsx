@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ja } from "date-fns/locale";
 import Stack from "@mui/material/Stack";
@@ -16,15 +15,12 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import {
-  insightsResponseSchema,
-  type InsightsResponse,
-  type ReducePoint,
-  type VisibilityPoint,
-  type GratitudePoint,
+import { useGetInsightsQuery } from "@/lib/store";
+import type {
+  ReducePoint,
+  VisibilityPoint,
+  GratitudePoint,
 } from "@/lib/contracts";
-
-type Insights = InsightsResponse;
 
 // Soft palette to keep charts feeling like a notebook, not a dashboard.
 const COLORS = {
@@ -34,18 +30,9 @@ const COLORS = {
 };
 
 export function WeeklyCharts({ weeks = 8 }: { weeks?: number }) {
-  const [data, setData] = useState<Insights | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useGetInsightsQuery({ weeks });
 
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/insights/weekly?weeks=${weeks}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((raw: unknown) => setData(insightsResponseSchema.parse(raw)))
-      .finally(() => setLoading(false));
-  }, [weeks]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <Typography variant="body2" color="text.secondary">
         グラフを読み込み中…

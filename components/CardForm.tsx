@@ -19,6 +19,19 @@ import {
   VISIBILITY,
   NEEDS,
 } from "@/lib/constants";
+import {
+  useCreateCardMutation,
+  useUpdateCardMutation,
+} from "@/lib/store";
+import type {
+  Bearer,
+  Category,
+  Depleted,
+  LoadType,
+  NeedKey,
+  Visibility,
+  Weight,
+} from "@/lib/contracts";
 
 type Sharing = "private" | "candidate";
 
@@ -60,6 +73,8 @@ export function CardForm({
   const [value, setValue] = useState<CardFormValue>({ ...EMPTY, ...initial });
   const [saving, setSaving] = useState<Sharing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createCard] = useCreateCardMutation();
+  const [updateCard] = useUpdateCardMutation();
 
   function patch<K extends keyof CardFormValue>(k: K, v: CardFormValue[K]) {
     setValue((prev) => ({ ...prev, [k]: v }));
@@ -73,33 +88,23 @@ export function CardForm({
     }
     setSaving(sharing);
     try {
-      const url = cardId ? `/api/cards/${cardId}` : "/api/cards";
-      const method = cardId ? "PATCH" : "POST";
-      const payload = {
-        ...(cardId ? {} : { authorId }),
+      const body = {
         title: value.title.trim(),
-        category: value.category,
+        category: value.category as Category,
         privateText: value.privateText.trim() || null,
-        loadTypes: value.loadTypes,
-        bearer: value.bearer,
-        weight: value.weight,
-        depleted: value.depleted,
-        visibility: value.visibility,
-        needs: value.needs,
+        loadTypes: value.loadTypes as LoadType[],
+        bearer: value.bearer as Bearer,
+        weight: value.weight as Weight,
+        depleted: value.depleted as Depleted[],
+        visibility: value.visibility as Visibility,
+        needs: value.needs as NeedKey[],
         sharing,
       };
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`保存に失敗しました: ${body.slice(0, 200)}`);
-      }
-      const data = (await res.json()) as { card: { id: string } };
+      const card = cardId
+        ? await updateCard({ id: cardId, patch: body }).unwrap()
+        : await createCard({ authorId, ...body }).unwrap();
       if (!cardId) setValue(EMPTY);
-      onSaved?.(data.card.id, sharing);
+      onSaved?.(card.id, sharing);
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {

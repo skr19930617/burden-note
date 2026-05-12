@@ -12,10 +12,23 @@ import AddIcon from "@mui/icons-material/AddCircleOutline";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import Typography from "@mui/material/Typography";
-import { useUserContext } from "./UserContext";
+import {
+  useAppDispatch,
+  useCreateUserMutation,
+  useUpdateUserMutation,
+  setMe,
+} from "@/lib/store";
+import { useMe, useMeId, useUsers, useUsersLoading } from "@/lib/store/hooks";
 
 export function UserSwitcher() {
-  const { users, meId, setMe, renameMe, createUser, loading } = useUserContext();
+  const dispatch = useAppDispatch();
+  const users = useUsers();
+  const me = useMe();
+  const meId = useMeId();
+  const loading = useUsersLoading();
+  const [createUser] = useCreateUserMutation();
+  const [updateUser] = useUpdateUserMutation();
+
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [adding, setAdding] = useState(false);
@@ -29,8 +42,6 @@ export function UserSwitcher() {
     );
   }
 
-  const me = users.find((u) => u.id === meId);
-
   return (
     <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
       <Typography variant="caption" color="text.secondary">
@@ -39,7 +50,7 @@ export function UserSwitcher() {
       <Select
         size="small"
         value={meId ?? ""}
-        onChange={(e) => setMe(String(e.target.value))}
+        onChange={(e) => dispatch(setMe(String(e.target.value)))}
         sx={{ minWidth: 92 }}
       >
         {users.map((u) => (
@@ -63,7 +74,7 @@ export function UserSwitcher() {
         </Tooltip>
       )}
 
-      {editing && (
+      {editing && me && (
         <Stack
           component="form"
           direction="row"
@@ -71,10 +82,10 @@ export function UserSwitcher() {
           alignItems="center"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (editName.trim()) {
-              await renameMe(editName.trim());
-              setEditing(false);
-            }
+            const trimmed = editName.trim();
+            if (!trimmed) return;
+            await updateUser({ id: me.id, patch: { name: trimmed } }).unwrap();
+            setEditing(false);
           }}
         >
           <TextField
@@ -107,12 +118,12 @@ export function UserSwitcher() {
           alignItems="center"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (newName.trim()) {
-              const created = await createUser(newName.trim());
-              setMe(created.id);
-              setNewName("");
-              setAdding(false);
-            }
+            const trimmed = newName.trim();
+            if (!trimmed) return;
+            const created = await createUser({ name: trimmed }).unwrap();
+            dispatch(setMe(created.id));
+            setNewName("");
+            setAdding(false);
           }}
         >
           <TextField

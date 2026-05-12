@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMemo } from "react";
 import { format, startOfWeek } from "date-fns";
 import { ja } from "date-fns/locale";
 import Stack from "@mui/material/Stack";
@@ -14,7 +14,14 @@ import TableHead from "@mui/material/TableHead";
 import TableBody from "@mui/material/TableBody";
 import TableRow from "@mui/material/TableRow";
 import TableCell from "@mui/material/TableCell";
-import { useUserContext, useMe, usePartner } from "@/components/UserContext";
+import { useMe, usePartner, useUsers } from "@/lib/store/hooks";
+import {
+  useGetCardsQuery,
+  useGetGratitudesQuery,
+  useCreateGratitudeMutation,
+  useAcknowledgeGratitudeMutation,
+} from "@/lib/store";
+import { WeeklyCharts } from "@/components/WeeklyCharts";
 import {
   CATEGORIES,
   DEPLETED,
@@ -22,44 +29,30 @@ import {
   SHARED_VISIBILITY_LABELS,
   labelOf,
 } from "@/lib/constants";
-import {
-  cardListResponseSchema,
-  gratitudeListResponseSchema,
-  type Card,
-  type Gratitude,
-  type LoadType,
-} from "@/lib/contracts";
+import type { Card, Gratitude, LoadType } from "@/lib/contracts";
 
 type SharedCard = Card;
 
 export default function SharedPage() {
-  const { users } = useUserContext();
+  const users = useUsers();
   const me = useMe();
   const partner = usePartner();
-  const [cards, setCards] = useState<SharedCard[]>([]);
-  const [gratitudes, setGratitudes] = useState<Gratitude[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const sinceIso = startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
+  // startOfWeek depends on `new Date()`, which would change every render.
+  // Stabilize the boundary for the lifetime of this page mount.
+  const sinceIso = useMemo(
+    () => startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString(),
+    [],
+  );
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    const [rawCards, rawGrats] = await Promise.all([
-      fetch(`/api/cards?sharing=shared&since=${encodeURIComponent(sinceIso)}`, {
-        cache: "no-store",
-      }).then((r) => r.json() as Promise<unknown>),
-      fetch(`/api/gratitudes?since=${encodeURIComponent(sinceIso)}`, {
-        cache: "no-store",
-      }).then((r) => r.json() as Promise<unknown>),
-    ]);
-    setCards(cardListResponseSchema.parse(rawCards).cards);
-    setGratitudes(gratitudeListResponseSchema.parse(rawGrats).gratitudes);
-    setLoading(false);
-  }, [sinceIso]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const { data: cards = [], isLoading: cardsLoading } = useGetCardsQuery({
+    sharing: "shared",
+    since: sinceIso,
+  });
+  const { data: gratitudes = [], isLoading: gratLoading } = useGetGratitudesQuery({
+    since: sinceIso,
+  });
+  const loading = cardsLoading || gratLoading;
 
   if (!me) return null;
 
@@ -69,7 +62,7 @@ export default function SharedPage() {
         <Typography variant="h2">2人で見る</Typography>
         <Typography variant="caption" color="text.secondary">
           {format(new Date(sinceIso), "yyyy/M/d", { locale: ja })} 〜 今日まで。
-          合計の割合や採点は出しません。
+          合計の割合や採点は出しません。下に過去 8 週の推移もまとめています。
         </Typography>
       </Box>
 
@@ -81,11 +74,7 @@ export default function SharedPage() {
 
       {!loading && (
         <>
-          <GratitudeInbox
-            gratitudes={gratitudes}
-            meId={me.id}
-            onChanged={() => void reload()}
-          />
+          <GratitudeInbox gratitudes={gratitudes} meId={me.id} />
           <HeavyLoadTypes cards={cards} />
           <ThisWeekTop cards={cards} />
           <BurdenTypeMatrix cards={cards} users={users} />
@@ -96,8 +85,8 @@ export default function SharedPage() {
             gratitudes={gratitudes}
             meId={me.id}
             partnerId={partner?.id ?? null}
-            onSaved={() => void reload()}
           />
+          <WeeklyCharts weeks={8} />
         </>
       )}
     </Stack>
@@ -325,30 +314,25 @@ function GratitudeCandidates({
   gratitudes,
   meId,
   partnerId,
-  onSaved,
 }: {
   cards: SharedCard[];
   gratitudes: Gratitude[];
   meId: string;
   partnerId: string | null;
-  onSaved: () => void;
 }) {
   const suggestions = cards.filter((c) => c.author.id !== meId);
   const myThanks = gratitudes.filter((g) => g.fromUserId === meId);
+  const [createGratitude] = useCreateGratitudeMutation();
 
   async function thank(card: SharedCard) {
     if (!partnerId) return;
-    await fetch("/api/gratitudes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fromUserId: meId,
-        toUserId: partnerId,
-        text: `「${card.title}」 ありがとう。`,
-        cardId: card.id,
-      }),
-    });
-    onSaved();
+    await createGratitude({
+      fromUserId: meId,
+      toUserId: partnerId,
+      text: `「${card.title}」 ありがとう。`,
+      cardId: card.id,
+      source: "button",
+    }).unwrap();
   }
 
   if (suggestions.length === 0 && myThanks.length === 0) return null;
@@ -407,23 +391,16 @@ function GratitudeCandidates({
 function GratitudeInbox({
   gratitudes,
   meId,
-  onChanged,
 }: {
   gratitudes: Gratitude[];
   meId: string;
-  onChanged: () => void;
 }) {
-  // Show gratitudes received by me, with an ack toggle.
   const received = gratitudes.filter((g) => g.toUserId === meId);
+  const [acknowledgeGratitude] = useAcknowledgeGratitudeMutation();
   if (received.length === 0) return null;
 
   async function setAck(g: Gratitude, acked: boolean) {
-    await fetch(`/api/gratitudes/${g.id}/acknowledge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ acked }),
-    });
-    onChanged();
+    await acknowledgeGratitude({ id: g.id, acked }).unwrap();
   }
 
   return (

@@ -7,7 +7,7 @@ import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
 import { CardForm } from "@/components/CardForm";
-import { useMe } from "@/components/UserContext";
+import { useMe } from "@/lib/store/hooks";
 
 export default function HomePage() {
   const me = useMe();
@@ -30,7 +30,7 @@ export default function HomePage() {
         authorId={me.id}
         onSaved={(id, sharing) => {
           if (sharing === "candidate") {
-            router.push(`/share?card=${id}`);
+            router.push(`/cards/${id}`);
           } else {
             setSavedNotice("自分のメモとして保存しました。共有はあとから選べます。");
             setTimeout(() => setSavedNotice(null), 4000);

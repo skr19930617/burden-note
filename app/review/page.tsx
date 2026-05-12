@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, startOfWeek } from "date-fns";
 import { ja } from "date-fns/locale";
 import Stack from "@mui/material/Stack";
@@ -12,82 +12,56 @@ import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import { REDUCE_TARGETS, NEXT_ACTIONS, labelOf } from "@/lib/constants";
 import { WeeklyFeedbackPanel } from "@/components/WeeklyFeedbackPanel";
-import { WeeklyCharts } from "@/components/WeeklyCharts";
 import {
-  weeklyPickListResponseSchema,
-  weeklyPickSingleResponseSchema,
-  type WeeklyPick,
-} from "@/lib/contracts";
-
-type Pick = WeeklyPick;
+  useGetWeeklyPicksQuery,
+  useUpsertWeeklyPickMutation,
+} from "@/lib/store";
 
 const CUSTOM = "__custom__";
 
 export default function ReviewPage() {
-  const [picks, setPicks] = useState<Pick[]>([]);
+  const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
+  const { data: picks = [] } = useGetWeeklyPicksQuery();
+  const [upsertWeeklyPick, { isLoading: saving }] = useUpsertWeeklyPickMutation();
   const [pickedBurden, setPickedBurden] = useState("");
   const [customBurden, setCustomBurden] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-
+  // Hydrate form when the current-week pick lands in cache.
   useEffect(() => {
-    fetch("/api/weekly", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((raw: unknown) => {
-        const parsed = weeklyPickListResponseSchema.parse(raw);
-        setPicks(parsed.picks);
-        const current = parsed.picks.find(
-          (p) => new Date(p.weekStart).toDateString() === weekStart.toDateString(),
-        );
-        if (current) {
-          const known = REDUCE_TARGETS.find((t) => t.value === current.pickedBurden);
-          if (known) {
-            setPickedBurden(known.value);
-          } else {
-            setPickedBurden(CUSTOM);
-            setCustomBurden(current.pickedBurden);
-          }
-          setNextAction(current.nextAction ?? "");
-          setNote(current.note ?? "");
-        }
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const current = picks.find(
+      (p) => new Date(p.weekStart).toDateString() === weekStart.toDateString(),
+    );
+    if (!current) return;
+    const known = REDUCE_TARGETS.find((t) => t.value === current.pickedBurden);
+    if (known) {
+      setPickedBurden(known.value);
+    } else {
+      setPickedBurden(CUSTOM);
+      setCustomBurden(current.pickedBurden);
+    }
+    setNextAction(current.nextAction ?? "");
+    setNote(current.note ?? "");
+  }, [picks, weekStart]);
 
   async function save() {
     const burden = pickedBurden === CUSTOM ? customBurden.trim() : pickedBurden;
     if (!burden) return;
-    setSaving(true);
     setSaved(false);
-    const res = await fetch("/api/weekly", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      await upsertWeeklyPick({
         weekStart: weekStart.toISOString(),
         pickedBurden: burden,
         nextAction: nextAction || null,
         note: note || null,
-      }),
-    });
-    if (res.ok) {
-      const raw: unknown = await res.json();
-      const parsed = weeklyPickSingleResponseSchema.parse(raw);
-      setPicks((prev) => {
-        const others = prev.filter(
-          (p) => new Date(p.weekStart).toDateString() !== weekStart.toDateString(),
-        );
-        return [parsed.pick, ...others].sort(
-          (a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime(),
-        );
-      });
+      }).unwrap();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch {
+      // swallow; UI button will re-enable
     }
-    setSaving(false);
   }
 
   return (
@@ -100,8 +74,6 @@ export default function ReviewPage() {
       </Box>
 
       <WeeklyFeedbackPanel weekStart={weekStart.toISOString()} />
-
-      <WeeklyCharts weeks={8} />
 
       <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
         <Stack spacing={2.5}>

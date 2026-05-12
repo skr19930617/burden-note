@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import { ThemeRegistry } from "@/components/ThemeRegistry";
-import { UserContextProvider } from "@/components/UserContext";
+import { StoreProvider } from "@/components/StoreProvider";
 import { Header } from "@/components/Header";
 
 export const metadata: Metadata = {
@@ -21,14 +21,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body>
         <ThemeRegistry>
-          <UserContextProvider>
+          <StoreProvider>
             <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
               <Header />
               <Container maxWidth="sm" sx={{ pb: 10, pt: { xs: 2, sm: 3 } }}>
                 {children}
               </Container>
             </Box>
-          </UserContextProvider>
+          </StoreProvider>
         </ThemeRegistry>
       </body>
     </html>

@@ -1,42 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-import { useMe } from "@/components/UserContext";
-import { CardListItem, type CardLite } from "@/components/CardListItem";
-import { cardListResponseSchema } from "@/lib/contracts";
+import { useMe } from "@/lib/store/hooks";
+import { useGetCardsQuery } from "@/lib/store";
+import { CardListItem } from "@/components/CardListItem";
 
-type Filter = "all" | "private" | "candidate" | "shared";
+type Filter = "all" | "private" | "candidate";
 
 export default function CardsPage() {
   const me = useMe();
   const [filter, setFilter] = useState<Filter>("all");
-  const [cards, setCards] = useState<CardLite[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!me) return;
-    setLoading(true);
-    const qs = new URLSearchParams({ authorId: me.id });
-    if (filter !== "all") qs.set("sharing", filter);
-    fetch(`/api/cards?${qs.toString()}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((raw: unknown) => {
-        const parsed = cardListResponseSchema.parse(raw);
-        setCards(parsed.cards);
-      })
-      .finally(() => setLoading(false));
-  }, [me, filter]);
+  const { data: cards = [], isLoading } = useGetCardsQuery(
+    me ? { authorId: me.id, sharing: filter === "all" ? undefined : filter } : undefined,
+    { skip: !me },
+  );
 
   if (!me) return null;
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h2">あなたのメモ</Typography>
+      <Box>
+        <Typography variant="h2">自分のメモ</Typography>
+        <Typography variant="caption" color="text.secondary">
+          書いたメモを読み返す場所。各メモを開くと「共有候補」のときだけ AI 整え画面が開きます。共有後の見え方は「2人で見る」へ。
+        </Typography>
+      </Box>
       <ToggleButtonGroup
         size="small"
         value={filter}
@@ -47,15 +41,14 @@ export default function CardsPage() {
         <ToggleButton value="all">すべて</ToggleButton>
         <ToggleButton value="private">自分だけ</ToggleButton>
         <ToggleButton value="candidate">共有候補</ToggleButton>
-        <ToggleButton value="shared">共有済み</ToggleButton>
       </ToggleButtonGroup>
 
-      {loading && (
+      {isLoading && (
         <Typography variant="body2" color="text.secondary">
           読み込み中…
         </Typography>
       )}
-      {!loading && cards.length === 0 && (
+      {!isLoading && cards.length === 0 && (
         <Paper
           variant="outlined"
           sx={{
@@ -66,7 +59,7 @@ export default function CardsPage() {
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            まだメモがありません。「今日」タブから書いてみてください。
+            まだメモがありません。「書く」タブから入力してみてください。
           </Typography>
         </Paper>
       )}

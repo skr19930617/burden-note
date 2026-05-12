@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Stack from "@mui/material/Stack";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -11,75 +11,64 @@ import Alert from "@mui/material/Alert";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { AiChip } from "./AiBadge";
-import { useMe } from "./UserContext";
+import { useMe } from "@/lib/store/hooks";
+import {
+  useGetWeeklyFeedbackQuery,
+  useGenerateWeeklyFeedbackMutation,
+  useSetFeltAcknowledgedMutation,
+} from "@/lib/store";
 import {
   feltAcknowledgedSchema,
-  weeklyFeedbackBundleSchema,
   type FeltAcknowledged,
-  type WeeklyFeedback,
-  type WeeklyPick,
 } from "@/lib/contracts";
-
-type Pick = WeeklyPick;
 
 export function WeeklyFeedbackPanel({ weekStart }: { weekStart: string }) {
   const me = useMe();
-  const [perUser, setPerUser] = useState<WeeklyFeedback[]>([]);
-  const [pick, setPick] = useState<Pick | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const { data, isLoading } = useGetWeeklyFeedbackQuery(weekStart);
+  const [generateFeedback, { isLoading: generating }] = useGenerateWeeklyFeedbackMutation();
+  const [setFelt] = useSetFeltAcknowledgedMutation();
   const [error, setError] = useState<string | null>(null);
   const [partnerOpen, setPartnerOpen] = useState(false);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    const r = await fetch(`/api/weekly/feedback?week=${encodeURIComponent(weekStart)}`, {
-      cache: "no-store",
-    });
-    const raw: unknown = await r.json();
-    const parsed = weeklyFeedbackBundleSchema.parse(raw);
-    setPerUser(parsed.perUser);
-    setPick(parsed.pick);
-    setLoading(false);
-  }, [weekStart]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const perUser = data?.perUser ?? [];
+  const pick = data?.pick ?? null;
 
   async function generate() {
-    setGenerating(true);
     setError(null);
     try {
-      const r = await fetch(`/api/weekly/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStart }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? "失敗しました");
-      await reload();
+      await generateFeedback({ weekStart }).unwrap();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "失敗しました");
-    } finally {
-      setGenerating(false);
+      const msg =
+        err && typeof err === "object" && "data" in err
+          ? (() => {
+              const d = (err as { data: unknown }).data;
+              if (
+                d &&
+                typeof d === "object" &&
+                "error" in d &&
+                typeof (d as { error: unknown }).error === "string"
+              ) {
+                return (d as { error: string }).error;
+              }
+              return "失敗しました";
+            })()
+          : err instanceof Error
+          ? err.message
+          : "失敗しました";
+      setError(msg);
     }
   }
 
   async function setAck(value: FeltAcknowledged | null) {
     if (!me) return;
-    await fetch(
-      `/api/weekly/feedback/${me.id}?week=${encodeURIComponent(weekStart)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feltAcknowledged: value }),
-      },
-    );
-    await reload();
+    await setFelt({
+      userId: me.id,
+      weekStart,
+      feltAcknowledged: value,
+    }).unwrap();
   }
 
-  if (loading) return null;
+  if (isLoading) return null;
 
   const myFeedback = perUser.find((p) => p.userId === me?.id);
   const partnerFeedback = perUser.find((p) => p.userId !== me?.id);
