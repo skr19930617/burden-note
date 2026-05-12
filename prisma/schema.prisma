@@ -1,0 +1,72 @@
+// Burden Note — local-first DB schema (Prisma 7)
+// Datasource URL lives in prisma.config.ts; the schema only declares the provider.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  color     String?
+  createdAt DateTime @default(now())
+
+  cards         BurdenCard[]
+  gratitudesOut Gratitude[]  @relation("GratitudeFrom")
+  gratitudesIn  Gratitude[]  @relation("GratitudeTo")
+}
+
+model BurdenCard {
+  id        String @id @default(cuid())
+  authorId  String
+  author    User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  title    String
+  category String
+  details  String?
+
+  bearer     String
+  weight     String
+  depleted   String @default("[]")
+  visibility String
+  need       String
+
+  sharing       String    @default("private")
+  rephrasedText String?
+  rephrasedAt   DateTime?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([authorId, occurredAt])
+  @@index([sharing])
+}
+
+model Gratitude {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  fromUser   User     @relation("GratitudeFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("GratitudeTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  text       String
+  cardId     String?
+  createdAt  DateTime @default(now())
+
+  @@index([toUserId, createdAt])
+}
+
+model WeeklyPick {
+  id           String   @id @default(cuid())
+  weekStart    DateTime
+  pickedBurden String
+  nextAction   String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@unique([weekStart])
+}
