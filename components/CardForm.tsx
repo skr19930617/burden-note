@@ -9,8 +9,10 @@ import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import { ChipGroup } from "./ChipGroup";
+import { AiChip, AiTooltip } from "./AiBadge";
 import {
   CATEGORIES,
+  LOAD_TYPES,
   BEARERS,
   WEIGHTS,
   DEPLETED,
@@ -23,23 +25,25 @@ type Sharing = "private" | "candidate";
 export type CardFormValue = {
   title: string;
   category: string;
-  details: string;
+  privateText: string;
+  loadTypes: string[];
   bearer: string;
   weight: string;
   depleted: string[];
   visibility: string;
-  need: string;
+  needs: string[];
 };
 
 const EMPTY: CardFormValue = {
   title: "",
   category: "childcare",
-  details: "",
+  privateText: "",
+  loadTypes: [],
   bearer: "self",
   weight: "moderate",
   depleted: [],
   visibility: "partly",
-  need: "just_know",
+  needs: ["just_know"],
 };
 
 export function CardForm({
@@ -75,12 +79,13 @@ export function CardForm({
         ...(cardId ? {} : { authorId }),
         title: value.title.trim(),
         category: value.category,
-        details: value.details.trim() || null,
+        privateText: value.privateText.trim() || null,
+        loadTypes: value.loadTypes,
         bearer: value.bearer,
         weight: value.weight,
         depleted: value.depleted,
         visibility: value.visibility,
-        need: value.need,
+        needs: value.needs,
         sharing,
       };
       const res = await fetch(url, {
@@ -120,7 +125,7 @@ export function CardForm({
           onChange={(e) => patch("title", e.target.value)}
         />
         <Box sx={{ mt: 2 }}>
-          <Label>カテゴリ</Label>
+          <Label>カテゴリ (何が起きたか)</Label>
           <ChipGroup
             options={CATEGORIES}
             value={value.category}
@@ -134,13 +139,25 @@ export function CardForm({
             multiline
             minRows={4}
             placeholder="そのときの気持ちや状況をそのまま書いてOK。共有時は責められた印象にならないように言い換えます。"
-            value={value.details}
-            onChange={(e) => patch("details", e.target.value)}
+            value={value.privateText}
+            onChange={(e) => patch("privateText", e.target.value)}
           />
         </Box>
       </Section>
 
-      <Section title="B. 誰が主に担った？">
+      <Section
+        title="B. どんな種類の負担だった？"
+        help="同じ出来事でも、含まれる負担の種類は人によって違う。複数選べる。"
+      >
+        <ChipGroup
+          options={LOAD_TYPES}
+          value={value.loadTypes}
+          onChange={(v) => patch("loadTypes", v as string[])}
+          multi
+        />
+      </Section>
+
+      <Section title="C. 誰が主に担った？">
         <ChipGroup
           options={BEARERS}
           value={value.bearer}
@@ -149,16 +166,16 @@ export function CardForm({
         />
       </Section>
 
-      <Section title="C. 自分にとっての負担感">
+      <Section title="D. 自分にとっての負担感">
         <ChipGroup
           options={WEIGHTS}
           value={value.weight}
           onChange={(v) => patch("weight", v as string)}
-          help="数値ではなく、体感に近い言葉で。"
+          help="数値ではなく、体感に近い言葉で。点数化や比較には使われない。"
         />
       </Section>
 
-      <Section title="D. 何が削られた？" help="複数選べる。ここがこのノートの中心。">
+      <Section title="E. 何が削られた？" help="複数選べる。ここがこのノートの中心。">
         <ChipGroup
           options={DEPLETED}
           value={value.depleted}
@@ -167,7 +184,7 @@ export function CardForm({
         />
       </Section>
 
-      <Section title="E. 相手に見えていたと思う？">
+      <Section title="F. 相手に見えていたと思う？">
         <ChipGroup
           options={VISIBILITY}
           value={value.visibility}
@@ -176,12 +193,12 @@ export function CardForm({
         />
       </Section>
 
-      <Section title="F. 今どうしてほしい？">
+      <Section title="G. 今どうしてほしい？" help="複数選んでよい。解決を求めない選択肢もある。">
         <ChipGroup
           options={NEEDS}
-          value={value.need}
-          onChange={(v) => patch("need", v as string)}
-          help="解決を求めない選択肢もある。"
+          value={value.needs}
+          onChange={(v) => patch("needs", v as string[])}
+          multi
         />
       </Section>
 
@@ -193,31 +210,57 @@ export function CardForm({
           bottom: 0,
           mx: -2,
           px: 2,
-          py: 1.5,
+          py: 1,
           borderTop: "1px solid",
           borderColor: "divider",
           bgcolor: "rgba(248, 247, 244, 0.95)",
           backdropFilter: "blur(8px)",
-          display: "flex",
-          gap: 1,
         }}
       >
-        <Button
-          variant="outlined"
-          fullWidth
-          disabled={saving !== null}
-          onClick={() => void save("private")}
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          spacing={1}
+          flexWrap="wrap"
+          rowGap={0.75}
         >
-          {saving === "private" ? "保存中…" : "自分だけ保存"}
-        </Button>
-        <Button
-          variant="contained"
-          fullWidth
-          disabled={saving !== null}
-          onClick={() => void save("candidate")}
-        >
-          {saving === "candidate" ? "保存中…" : "2人で見る候補にする"}
-        </Button>
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.75}
+            sx={{ color: "text.secondary", minWidth: 0 }}
+          >
+            <AiChip
+              label="次の画面で AI"
+              tooltip="「2人で見る候補にする」を押すと共有準備の画面に進みます。そこで AI があなたの生のメモを、相手に責められた印象が出にくい表現へ整えます (生のメモは自分用に残ります)。"
+            />
+            <Typography variant="caption" sx={{ display: { xs: "none", sm: "inline" } }}>
+              候補にすると AI が言い換えを作ります
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
+            <Button
+              variant="text"
+              size="small"
+              disabled={saving !== null}
+              onClick={() => void save("private")}
+            >
+              {saving === "private" ? "保存中…" : "自分だけ保存"}
+            </Button>
+            <AiTooltip title="押すと共有準備画面に進み、AI が責められた印象にならない表現へ整えます。">
+              <Button
+                variant="contained"
+                size="small"
+                disableElevation
+                disabled={saving !== null}
+                onClick={() => void save("candidate")}
+              >
+                {saving === "candidate" ? "保存中…" : "候補にする"}
+              </Button>
+            </AiTooltip>
+          </Stack>
+        </Stack>
       </Box>
     </Stack>
   );

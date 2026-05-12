@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { cardCreateSchema } from "@/lib/validation";
 
+const JSON_ARRAY_FIELDS = ["loadTypes", "depleted", "needs"] as const;
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const authorId = url.searchParams.get("authorId");
@@ -19,12 +21,7 @@ export async function GET(req: Request) {
     include: { author: true },
     take: 200,
   });
-  return NextResponse.json({
-    cards: cards.map((c) => ({
-      ...c,
-      depleted: safeParseArray(c.depleted),
-    })),
-  });
+  return NextResponse.json({ cards: cards.map(toApiCard) });
 }
 
 export async function POST(req: Request) {
@@ -39,22 +36,31 @@ export async function POST(req: Request) {
       authorId: input.authorId,
       title: input.title,
       category: input.category,
-      details: input.details ?? null,
+      privateText: input.privateText ?? null,
+      loadTypes: JSON.stringify(input.loadTypes ?? []),
       bearer: input.bearer,
       weight: input.weight,
       depleted: JSON.stringify(input.depleted ?? []),
       visibility: input.visibility,
-      need: input.need,
+      needs: JSON.stringify(input.needs ?? []),
       sharing: input.sharing,
       occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
     },
   });
-  return NextResponse.json({
-    card: { ...card, depleted: safeParseArray(card.depleted) },
-  });
+  return NextResponse.json({ card: toApiCard(card) });
 }
 
-function safeParseArray(raw: string): string[] {
+// Expand JSON-encoded array columns into arrays for the wire format.
+function toApiCard<T extends Record<string, unknown>>(card: T): T {
+  const out: Record<string, unknown> = { ...card };
+  for (const f of JSON_ARRAY_FIELDS) {
+    out[f] = safeParseArray(card[f]);
+  }
+  return out as T;
+}
+
+function safeParseArray(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
   try {
     const v = JSON.parse(raw);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];

@@ -25,19 +25,38 @@ model BurdenCard {
   authorId  String
   author    User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  title    String
-  category String
-  details  String?
+  // What happened — single CATEGORIES.
+  title       String
+  category    String
+  privateText String?
 
+  // What KIND of burden — JSON array (LOAD_TYPES).
+  loadTypes   String @default("[]")
+
+  // Who carried it — BEARERS.
   bearer     String
-  weight     String
-  depleted   String @default("[]")
-  visibility String
-  need       String
 
-  sharing       String    @default("private")
-  rephrasedText String?
-  rephrasedAt   DateTime?
+  // Felt weight — WEIGHTS. Never aggregate across people.
+  weight     String
+
+  // What got drained as a result — JSON array (DEPLETED).
+  depleted   String @default("[]")
+
+  // How visible was this to the partner — VISIBILITY.
+  visibility String
+
+  // What does the writer want done with this — JSON array (NEEDS).
+  needs      String @default("[]")
+
+  // Sharing pipeline: private → candidate → shared.
+  sharing     String    @default("private")
+  shareText   String?
+  rephrasedAt DateTime?
+
+  // AI-generated guidance, written alongside shareText. Optional so older cards stay readable.
+  appreciation String?   // 相手への労い・感謝の言葉
+  selfCare     String?   // 入力者自身への労い (相手向けではない)
+  adviceTip    String?   // 次の会話で意識すると良い一言アドバイス
 
   occurredAt DateTime @default(now())
   createdAt  DateTime @default(now())

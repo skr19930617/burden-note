@@ -10,7 +10,7 @@ import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
-import { REDUCE_TARGETS, NEXT_ACTIONS } from "@/lib/constants";
+import { REDUCE_TARGETS, NEXT_ACTIONS, labelOf } from "@/lib/constants";
 
 type Pick = {
   id: string;
@@ -19,6 +19,8 @@ type Pick = {
   nextAction: string | null;
   note: string | null;
 };
+
+const CUSTOM = "__custom__";
 
 export default function ReviewPage() {
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -40,10 +42,11 @@ export default function ReviewPage() {
           (p) => new Date(p.weekStart).toDateString() === weekStart.toDateString(),
         );
         if (current) {
-          if (REDUCE_TARGETS.includes(current.pickedBurden)) {
-            setPickedBurden(current.pickedBurden);
+          const known = REDUCE_TARGETS.find((t) => t.value === current.pickedBurden);
+          if (known) {
+            setPickedBurden(known.value);
           } else {
-            setPickedBurden("__custom__");
+            setPickedBurden(CUSTOM);
             setCustomBurden(current.pickedBurden);
           }
           setNextAction(current.nextAction ?? "");
@@ -54,7 +57,7 @@ export default function ReviewPage() {
   }, []);
 
   async function save() {
-    const burden = pickedBurden === "__custom__" ? customBurden.trim() : pickedBurden;
+    const burden = pickedBurden === CUSTOM ? customBurden.trim() : pickedBurden;
     if (!burden) return;
     setSaving(true);
     setSaved(false);
@@ -100,23 +103,23 @@ export default function ReviewPage() {
               減らす価値が一番高い負担はどれ？
             </Typography>
             <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-              {REDUCE_TARGETS.map((b) => (
+              {REDUCE_TARGETS.map((t) => (
                 <Chip
-                  key={b}
-                  label={b}
-                  onClick={() => setPickedBurden(b)}
-                  color={pickedBurden === b ? "primary" : "default"}
-                  variant={pickedBurden === b ? "filled" : "outlined"}
+                  key={t.value}
+                  label={t.label}
+                  onClick={() => setPickedBurden(t.value)}
+                  color={pickedBurden === t.value ? "primary" : "default"}
+                  variant={pickedBurden === t.value ? "filled" : "outlined"}
                 />
               ))}
               <Chip
                 label="自分で書く"
-                onClick={() => setPickedBurden("__custom__")}
-                color={pickedBurden === "__custom__" ? "primary" : "default"}
-                variant={pickedBurden === "__custom__" ? "filled" : "outlined"}
+                onClick={() => setPickedBurden(CUSTOM)}
+                color={pickedBurden === CUSTOM ? "primary" : "default"}
+                variant={pickedBurden === CUSTOM ? "filled" : "outlined"}
               />
             </Stack>
-            {pickedBurden === "__custom__" && (
+            {pickedBurden === CUSTOM && (
               <TextField
                 fullWidth
                 size="small"
@@ -135,11 +138,11 @@ export default function ReviewPage() {
             <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
               {NEXT_ACTIONS.map((a) => (
                 <Chip
-                  key={a}
-                  label={a}
-                  onClick={() => setNextAction(a)}
-                  color={nextAction === a ? "primary" : "default"}
-                  variant={nextAction === a ? "filled" : "outlined"}
+                  key={a.value}
+                  label={a.label}
+                  onClick={() => setNextAction(a.value)}
+                  color={nextAction === a.value ? "primary" : "default"}
+                  variant={nextAction === a.value ? "filled" : "outlined"}
                 />
               ))}
             </Stack>
@@ -165,7 +168,7 @@ export default function ReviewPage() {
               onClick={save}
               disabled={
                 saving ||
-                !(pickedBurden && (pickedBurden !== "__custom__" || customBurden.trim()))
+                !(pickedBurden && (pickedBurden !== CUSTOM || customBurden.trim()))
               }
             >
               {saving ? "保存中…" : "今週の選択を保存"}
@@ -195,10 +198,10 @@ export default function ReviewPage() {
                   {format(new Date(p.weekStart), "yyyy/M/d", { locale: ja })} の週
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.25 }}>
-                  {p.pickedBurden}
+                  {labelOf(REDUCE_TARGETS, p.pickedBurden)}
                   {p.nextAction && (
                     <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                      → {p.nextAction}
+                      → {labelOf(NEXT_ACTIONS, p.nextAction)}
                     </Typography>
                   )}
                 </Typography>

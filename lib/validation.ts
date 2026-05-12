@@ -4,12 +4,13 @@ export const cardCreateSchema = z.object({
   authorId: z.string().min(1),
   title: z.string().min(1).max(200),
   category: z.string().min(1),
-  details: z.string().max(4000).optional().nullable(),
+  privateText: z.string().max(4000).optional().nullable(),
+  loadTypes: z.array(z.string()).default([]),
   bearer: z.string().min(1),
   weight: z.string().min(1),
   depleted: z.array(z.string()).default([]),
   visibility: z.string().min(1),
-  need: z.string().min(1),
+  needs: z.array(z.string()).default([]),
   sharing: z.enum(["private", "candidate", "shared"]).default("private"),
   occurredAt: z.string().datetime().optional(),
 });
@@ -17,7 +18,7 @@ export const cardCreateSchema = z.object({
 export type CardCreateInput = z.infer<typeof cardCreateSchema>;
 
 export const cardPatchSchema = cardCreateSchema.partial().extend({
-  rephrasedText: z.string().optional().nullable(),
+  shareText: z.string().optional().nullable(),
 });
 
 export const userCreateSchema = z.object({

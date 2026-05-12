@@ -13,22 +13,28 @@ import Box from "@mui/material/Box";
 import Alert from "@mui/material/Alert";
 import { useMe } from "@/components/UserContext";
 import { CardListItem, type CardLite } from "@/components/CardListItem";
+import { AiChip, AiTooltip } from "@/components/AiBadge";
 import {
   CATEGORIES,
+  LOAD_TYPES,
   BEARERS,
   WEIGHTS,
   DEPLETED,
-  VISIBILITY,
   NEEDS,
+  SHARED_VISIBILITY_LABELS,
   labelOf,
   labelsOf,
 } from "@/lib/constants";
 
 type CardDetail = CardLite & {
-  details: string | null;
+  privateText: string | null;
+  loadTypes: string[];
   visibility: string;
-  need: string;
-  rephrasedText: string | null;
+  needs: string[];
+  shareText: string | null;
+  appreciation: string | null;
+  selfCare: string | null;
+  adviceTip: string | null;
 };
 
 export default function SharePage() {
@@ -55,6 +61,9 @@ function ShareInner() {
   const [active, setActive] = useState<CardDetail | null>(null);
   const [rephrasing, setRephrasing] = useState(false);
   const [insight, setInsight] = useState<string | null>(null);
+  const [appreciation, setAppreciation] = useState<string>("");
+  const [selfCare, setSelfCare] = useState<string>("");
+  const [adviceTip, setAdviceTip] = useState<string>("");
   const [adapter, setAdapter] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -80,23 +89,33 @@ function ShareInner() {
       .then((r) => r.json())
       .then((d: { card: CardDetail }) => {
         setActive(d.card);
-        setDraft(d.card.rephrasedText ?? "");
+        setDraft(d.card.shareText ?? "");
+        setAppreciation(d.card.appreciation ?? "");
+        setSelfCare(d.card.selfCare ?? "");
+        setAdviceTip(d.card.adviceTip ?? "");
         setInsight(null);
         setError(null);
+        // On first visit (right after pressing "候補にする") auto-run AI rather than wait for click.
+        if (!d.card.shareText) {
+          void runRephrase(d.card.id);
+        }
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId]);
 
-  async function rephrase() {
-    if (!active) return;
+  async function runRephrase(cardId: string) {
     setRephrasing(true);
     setError(null);
     try {
-      const r = await fetch(`/api/cards/${active.id}/rephrase`, { method: "POST" });
+      const r = await fetch(`/api/cards/${cardId}/rephrase`, { method: "POST" });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "LLM 呼び出しに失敗しました");
       setAdapter(d.adapter ?? null);
       setDraft(d.sharedText);
       setInsight(d.oneLineInsight);
+      setAppreciation(d.appreciation ?? "");
+      setSelfCare(d.selfCare ?? "");
+      setAdviceTip(d.adviceTip ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "失敗しました");
     } finally {
@@ -104,12 +123,17 @@ function ShareInner() {
     }
   }
 
+  async function rephrase() {
+    if (!active) return;
+    await runRephrase(active.id);
+  }
+
   async function markShared() {
     if (!active) return;
     await fetch(`/api/cards/${active.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sharing: "shared", rephrasedText: draft }),
+      body: JSON.stringify({ sharing: "shared", shareText: draft }),
     });
     await loadCandidates();
     router.push("/shared");
@@ -162,6 +186,8 @@ function ShareInner() {
     );
   }
 
+  const visibilityShared = SHARED_VISIBILITY_LABELS[active.visibility] ?? active.visibility;
+
   return (
     <Stack spacing={2}>
       <Button component={Link} href="/share" size="small" variant="text">
@@ -173,22 +199,27 @@ function ShareInner() {
         <Typography variant="caption" color="text.secondary">
           {active.author.name} / {new Date(active.occurredAt).toLocaleString("ja-JP")}
         </Typography>
-        {active.details && (
+        {active.privateText && (
           <Paper
             variant="outlined"
             sx={{ p: 1.5, mt: 1.5, bgcolor: "background.default", borderColor: "divider" }}
           >
             <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-              {active.details}
+              {active.privateText}
             </Typography>
           </Paper>
         )}
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
           <Chip size="small" variant="outlined" label={labelOf(CATEGORIES, active.category)} />
+          {labelsOf(LOAD_TYPES, active.loadTypes).map((l) => (
+            <Chip key={l} size="small" variant="outlined" label={l} />
+          ))}
           <Chip size="small" variant="outlined" label={labelOf(BEARERS, active.bearer)} />
           <Chip size="small" variant="outlined" label={labelOf(WEIGHTS, active.weight)} />
-          <Chip size="small" variant="outlined" label={labelOf(VISIBILITY, active.visibility)} />
-          <Chip size="small" variant="outlined" label={labelOf(NEEDS, active.need)} />
+          <Chip size="small" variant="outlined" label={visibilityShared} />
+          {labelsOf(NEEDS, active.needs).map((l) => (
+            <Chip key={l} size="small" variant="outlined" label={l} />
+          ))}
         </Stack>
         {active.depleted.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
@@ -199,24 +230,47 @@ function ShareInner() {
 
       <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-          <Typography variant="h3">共有用に整える</Typography>
-          <Button size="small" variant="outlined" onClick={rephrase} disabled={rephrasing}>
-            {rephrasing ? "整え中…" : draft ? "もう一度整える" : "言い換える"}
-          </Button>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h3">共有用に整える</Typography>
+            <AiChip
+              tooltip="このボタンを押すと AI があなたの生のメモを読み、相手に責められた印象になりにくい表現へ整えます。生のメモ自体は変わりません。"
+            />
+          </Stack>
+          <AiTooltip title="AI を呼び出して言い換え案を作ります。何度でも作り直せます。">
+            <Button size="small" variant="outlined" onClick={rephrase} disabled={rephrasing}>
+              {rephrasing ? "AI 整え中…" : draft ? "もう一度 AI で整える" : "AI で言い換える"}
+            </Button>
+          </AiTooltip>
         </Stack>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          下のテキストは AI の下書き。送る前に必ず自分で読み直して、手で直して構いません。
+        </Typography>
         <TextField
           fullWidth
           multiline
           minRows={6}
-          placeholder="ここに、相手に見せるテキストが入ります。LLM の下書きは手で直してOK。"
+          placeholder="ここに、相手に見せるテキストが入ります。AI の下書きは手で直してOK。"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />
         {adapter && (
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-            言い換えに使った仕組み: <code>{adapter}</code>
-            {adapter === "template" && <span> (xAI キー未設定のため簡易版)</span>}
-          </Typography>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+            <AiChip
+              label={adapter === "template" ? "AI なし" : `AI: ${adapter}`}
+              tooltip={
+                adapter === "template"
+                  ? "現在は AI を使っていません (xAI キーが未設定のため、簡易テンプレートで言い換えました)。.env に XAI_API_KEY を入れると本物の AI が動きます。"
+                  : `現在は ${adapter} のモデルが言い換えを生成しました。`
+              }
+            />
+            <Typography variant="caption" color="text.secondary">
+              この下書きの生成元
+            </Typography>
+          </Stack>
         )}
         {insight && (
           <Alert severity="info" sx={{ mt: 1.5 }}>
@@ -228,17 +282,96 @@ function ShareInner() {
             {error}
           </Alert>
         )}
-        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          <Button variant="outlined" fullWidth onClick={backToPrivate}>
-            やめる (自分だけに戻す)
+
+        {(selfCare || appreciation || adviceTip) && (
+          <Stack spacing={1.5} sx={{ mt: 2 }}>
+            {selfCare && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  borderColor: "rgba(184, 138, 138, 0.6)",
+                  bgcolor: "rgba(184, 138, 138, 0.08)",
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: "#8b5e5e" }}>
+                    自分への労いの一言
+                  </Typography>
+                  <AiChip
+                    label="AI 提案"
+                    tooltip="これは相手に送る言葉ではなく、AI から書いた本人 (あなた) への労いです。共有しなくて大丈夫。"
+                  />
+                </Stack>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {selfCare}
+                </Typography>
+              </Paper>
+            )}
+
+            {appreciation && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  borderColor: "secondary.main",
+                  bgcolor: "rgba(138, 160, 145, 0.08)",
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: "secondary.dark" }}>
+                    相手への労いの一言
+                  </Typography>
+                  <AiChip
+                    label="AI 提案"
+                    tooltip="AI があなたの入力をもとに、相手に渡せる労いの一言を提案しました。そのまま使わなくても大丈夫。"
+                  />
+                </Stack>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {appreciation}
+                </Typography>
+              </Paper>
+            )}
+
+            {adviceTip && (
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, borderColor: "divider", bgcolor: "background.default" }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    次に話すときのコツ
+                  </Typography>
+                  <AiChip
+                    label="AI 提案"
+                    tooltip="次に2人で話すときに穏やかに進めるための一言です。AI の提案なので、合わなければ無視して構いません。"
+                  />
+                </Stack>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {adviceTip}
+                </Typography>
+              </Paper>
+            )}
+          </Stack>
+        )}
+
+        <Stack
+          direction="row"
+          spacing={1}
+          justifyContent="flex-end"
+          sx={{ mt: 2 }}
+        >
+          <Button variant="text" size="small" onClick={backToPrivate}>
+            やめる
           </Button>
           <Button
             variant="contained"
-            fullWidth
+            size="small"
+            disableElevation
             disabled={!draft.trim()}
             onClick={markShared}
           >
-            これを 2人で見る に出す
+            2人で見る に出す
           </Button>
         </Stack>
       </Paper>

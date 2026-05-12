@@ -15,18 +15,25 @@ import TableBody from "@mui/material/TableBody";
 import TableRow from "@mui/material/TableRow";
 import TableCell from "@mui/material/TableCell";
 import { useUserContext, useMe, usePartner } from "@/components/UserContext";
-import { CATEGORIES, DEPLETED, VISIBILITY, labelOf } from "@/lib/constants";
+import {
+  CATEGORIES,
+  DEPLETED,
+  LOAD_TYPES,
+  SHARED_VISIBILITY_LABELS,
+  labelOf,
+} from "@/lib/constants";
 
 type SharedCard = {
   id: string;
   title: string;
   category: string;
+  loadTypes: string[];
   bearer: string;
   weight: string;
   depleted: string[];
   visibility: string;
-  need: string;
-  rephrasedText: string | null;
+  needs: string[];
+  shareText: string | null;
   occurredAt: string;
   author: { id: string; name: string };
 };
@@ -88,6 +95,7 @@ export default function SharedPage() {
 
       {!loading && (
         <>
+          <HeavyLoadTypes cards={cards} />
           <ThisWeekTop cards={cards} />
           <BurdenTypeMatrix cards={cards} users={users} />
           <Invisibility cards={cards} users={users} />
@@ -119,6 +127,31 @@ function SectionPaper({ title, help, children }: { title: string; help?: string;
   );
 }
 
+// 新: 「家庭として何が重いか」を LOAD_TYPES で集計する。誰が、ではなく何が、を見る。
+function HeavyLoadTypes({ cards }: { cards: SharedCard[] }) {
+  const counts = new Map<string, number>();
+  for (const c of cards) {
+    const w = weightScore(c.weight);
+    for (const t of c.loadTypes) {
+      counts.set(t, (counts.get(t) ?? 0) + w);
+    }
+  }
+  const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (top.length === 0) return null;
+  return (
+    <SectionPaper title="今週、重かった負担タイプ" help="家庭として今、どの種類の負担が重かったか。">
+      <Stack component="ol" spacing={1} sx={{ pl: 0, listStyle: "none", m: 0 }}>
+        {top.map(([key], i) => (
+          <Stack component="li" key={key} direction="row" alignItems="center" spacing={1.5}>
+            <Box sx={countBubbleSx}>{i + 1}</Box>
+            <Typography variant="body2">{labelOf(LOAD_TYPES, key)}</Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </SectionPaper>
+  );
+}
+
 function ThisWeekTop({ cards }: { cards: SharedCard[] }) {
   const counts = new Map<string, number>();
   for (const c of cards) {
@@ -127,7 +160,7 @@ function ThisWeekTop({ cards }: { cards: SharedCard[] }) {
   const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   return (
-    <SectionPaper title="今週、重かった負担" help="家庭として今重いもの (誰がではなく)。">
+    <SectionPaper title="今週、重かった出来事" help="どんな場面が重く残ったか (誰がではなく)。">
       {top.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           まだ共有されたメモがありません。
@@ -135,30 +168,8 @@ function ThisWeekTop({ cards }: { cards: SharedCard[] }) {
       ) : (
         <Stack component="ol" spacing={1} sx={{ pl: 0, listStyle: "none", m: 0 }}>
           {top.map(([cat], idx) => (
-            <Stack
-              key={cat}
-              component="li"
-              direction="row"
-              alignItems="center"
-              spacing={1.5}
-            >
-              <Box
-                sx={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  bgcolor: "background.default",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  color: "text.secondary",
-                }}
-              >
-                {idx + 1}
-              </Box>
+            <Stack key={cat} component="li" direction="row" alignItems="center" spacing={1.5}>
+              <Box sx={countBubbleSx}>{idx + 1}</Box>
               <Typography variant="body2">{labelOf(CATEGORIES, cat)}</Typography>
             </Stack>
           ))}
@@ -175,24 +186,14 @@ function BurdenTypeMatrix({
   cards: SharedCard[];
   users: { id: string; name: string }[];
 }) {
-  const rows: { key: string; label: string }[] = [
-    { key: "sleep", label: "睡眠負担" },
-    { key: "rest", label: "休息" },
-    { key: "self_worth", label: "罪悪感・自尊心" },
-    { key: "trust", label: "信頼感の揺れ" },
-    { key: "focus", label: "集中の中断" },
-    { key: "emotional_room", label: "感情の余裕" },
-    { key: "stamina", label: "体力" },
-    { key: "own_time", label: "自分の時間" },
-    { key: "loneliness", label: "孤独感" },
-  ];
+  // Use LOAD_TYPES as rows now — the spec says burden type, not depleted resources.
   if (cards.length === 0 || users.length === 0) return null;
 
-  function intensity(userId: string, depletedKey: string): number {
+  function intensity(userId: string, loadKey: string): number {
     let sum = 0;
     for (const c of cards) {
       if (c.author.id !== userId) continue;
-      if (!c.depleted.includes(depletedKey)) continue;
+      if (!c.loadTypes.includes(loadKey)) continue;
       sum += weightScore(c.weight);
     }
     return sum;
@@ -213,12 +214,12 @@ function BurdenTypeMatrix({
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.key}>
+            {LOAD_TYPES.map((r) => (
+              <TableRow key={r.value}>
                 <TableCell>{r.label}</TableCell>
                 {users.map((u) => (
                   <TableCell key={u.id} align="center">
-                    <IntensityCell value={intensity(u.id, r.key)} />
+                    <IntensityCell value={intensity(u.id, r.value)} />
                   </TableCell>
                 ))}
               </TableRow>
@@ -292,7 +293,7 @@ function Invisibility({
                     >
                       ・{c.title}
                       <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                        ({labelOf(VISIBILITY, c.visibility)})
+                        ({SHARED_VISIBILITY_LABELS[c.visibility] ?? c.visibility})
                       </Typography>
                     </Typography>
                   ))}
@@ -319,23 +320,7 @@ function DepletionRanking({ cards }: { cards: SharedCard[] }) {
       <Stack component="ol" spacing={1} sx={{ pl: 0, listStyle: "none", m: 0 }}>
         {top.map(([key], i) => (
           <Stack component="li" key={key} direction="row" alignItems="center" spacing={1.5}>
-            <Box
-              sx={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                bgcolor: "background.default",
-                border: "1px solid",
-                borderColor: "divider",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                color: "text.secondary",
-              }}
-            >
-              {i + 1}
-            </Box>
+            <Box sx={countBubbleSx}>{i + 1}</Box>
             <Typography variant="body2">{labelOf(DEPLETED, key)}</Typography>
           </Stack>
         ))}
@@ -431,3 +416,17 @@ function GratitudeCandidates({
 function weightScore(w: string): number {
   return ({ light: 1, moderate: 2, heavy: 3, very_heavy: 4, drained: 5 } as Record<string, number>)[w] ?? 2;
 }
+
+const countBubbleSx = {
+  width: 24,
+  height: 24,
+  borderRadius: "50%",
+  bgcolor: "background.default",
+  border: "1px solid",
+  borderColor: "divider",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 12,
+  color: "text.secondary",
+} as const;

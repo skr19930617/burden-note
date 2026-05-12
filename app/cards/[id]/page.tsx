@@ -11,6 +11,7 @@ import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import {
   CATEGORIES,
+  LOAD_TYPES,
   BEARERS,
   WEIGHTS,
   DEPLETED,
@@ -19,19 +20,24 @@ import {
   labelOf,
   labelsOf,
 } from "@/lib/constants";
+import { AiChip } from "@/components/AiBadge";
 
 type CardDetail = {
   id: string;
   title: string;
   category: string;
-  details: string | null;
+  privateText: string | null;
+  loadTypes: string[];
   bearer: string;
   weight: string;
   depleted: string[];
   visibility: string;
-  need: string;
+  needs: string[];
   sharing: string;
-  rephrasedText: string | null;
+  shareText: string | null;
+  appreciation: string | null;
+  selfCare: string | null;
+  adviceTip: string | null;
   occurredAt: string;
   author: { id: string; name: string };
 };
@@ -100,19 +106,23 @@ export default function CardDetailPage() {
           {card.author.name} / {new Date(card.occurredAt).toLocaleString("ja-JP")}
         </Typography>
 
-        {card.details && (
+        {card.privateText && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
               メモ
             </Typography>
             <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-              {card.details}
+              {card.privateText}
             </Typography>
           </Box>
         )}
 
         <Stack spacing={1.25} sx={{ mt: 2 }} divider={<Divider flexItem />}>
           <Row k="カテゴリ" v={labelOf(CATEGORIES, card.category)} />
+          <Row
+            k="負担の種類"
+            v={card.loadTypes.length ? labelsOf(LOAD_TYPES, card.loadTypes).join("・") : "—"}
+          />
           <Row k="主に担ったのは" v={labelOf(BEARERS, card.bearer)} />
           <Row k="負担感" v={labelOf(WEIGHTS, card.weight)} />
           <Row
@@ -120,15 +130,90 @@ export default function CardDetailPage() {
             v={card.depleted.length ? labelsOf(DEPLETED, card.depleted).join("・") : "—"}
           />
           <Row k="相手に見えていた？" v={labelOf(VISIBILITY, card.visibility)} />
-          <Row k="今どうしてほしい" v={labelOf(NEEDS, card.need)} />
+          <Row
+            k="今どうしてほしい"
+            v={card.needs.length ? labelsOf(NEEDS, card.needs).join("・") : "—"}
+          />
         </Stack>
       </Paper>
 
-      {card.rephrasedText && (
+      {card.shareText && (
         <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
-          <Typography variant="h3">共有用に整えた文</Typography>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h3">共有用に整えた文</Typography>
+            <AiChip
+              label="AI 生成"
+              tooltip="このテキストは AI が、あなたの生のメモから「責められた印象になりにくい表現」へ整えたものです。生のメモは上に残っています。"
+            />
+          </Stack>
           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
-            {card.rephrasedText}
+            {card.shareText}
+          </Typography>
+        </Paper>
+      )}
+
+      {card.selfCare && (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            borderColor: "rgba(184, 138, 138, 0.6)",
+            bgcolor: "rgba(184, 138, 138, 0.08)",
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h3" sx={{ color: "#8b5e5e" }}>
+              自分への労いの一言
+            </Typography>
+            <AiChip
+              label="AI 提案"
+              tooltip="これは相手に送る言葉ではなく、AI から書いた本人 (あなた) への労いです。共有しなくて大丈夫。"
+            />
+          </Stack>
+          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
+            {card.selfCare}
+          </Typography>
+        </Paper>
+      )}
+
+      {card.appreciation && (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            borderColor: "secondary.main",
+            bgcolor: "rgba(138, 160, 145, 0.08)",
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h3" sx={{ color: "secondary.dark" }}>
+              相手への労いの一言
+            </Typography>
+            <AiChip
+              label="AI 提案"
+              tooltip="AI があなたの入力をもとに、相手に渡せる労いの一言を提案しました。"
+            />
+          </Stack>
+          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
+            {card.appreciation}
+          </Typography>
+        </Paper>
+      )}
+
+      {card.adviceTip && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 3, borderColor: "divider", bgcolor: "background.default" }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h3">次に話すときのコツ</Typography>
+            <AiChip
+              label="AI 提案"
+              tooltip="次に2人で話すときに穏やかに進めるための一言です。AI の提案なので、合わなければ無視して構いません。"
+            />
+          </Stack>
+          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
+            {card.adviceTip}
           </Typography>
         </Paper>
       )}
@@ -157,15 +242,17 @@ export default function CardDetailPage() {
           ))}
         </Stack>
         {card.sharing === "candidate" && (
-          <Button
-            component={Link}
-            href={`/share?card=${card.id}`}
-            variant="contained"
-            fullWidth
-            sx={{ mt: 2 }}
-          >
-            共有用に整える
-          </Button>
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
+            <Button
+              component={Link}
+              href={`/share?card=${card.id}`}
+              variant="contained"
+              size="small"
+              disableElevation
+            >
+              共有用に整える
+            </Button>
+          </Stack>
         )}
       </Paper>
     </Stack>
@@ -178,7 +265,7 @@ function Row({ k, v }: { k: string; v: string }) {
       <Typography variant="caption" color="text.secondary">
         {k}
       </Typography>
-      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+      <Typography variant="body2" sx={{ fontWeight: 500, textAlign: "right" }}>
         {v}
       </Typography>
     </Stack>

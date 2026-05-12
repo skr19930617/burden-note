@@ -18,11 +18,16 @@ export function parseLlmJson(raw: string): RephraseOutput {
   const obj = parsed as Record<string, unknown>;
   const sharedText = typeof obj.sharedText === "string" ? obj.sharedText.trim() : "";
   const oneLineInsight = typeof obj.oneLineInsight === "string" ? obj.oneLineInsight.trim() : "";
+  const appreciation = typeof obj.appreciation === "string" ? obj.appreciation.trim() : "";
+  const selfCare = typeof obj.selfCare === "string" ? obj.selfCare.trim() : "";
+  const adviceTip = typeof obj.adviceTip === "string" ? obj.adviceTip.trim() : "";
 
   if (!sharedText) {
     throw new Error("LLM JSON missing sharedText");
   }
-  return { sharedText, oneLineInsight };
+  // appreciation / selfCare / adviceTip are best-effort. If the model omits them, default to empty
+  // (UI will hide the section rather than show a placeholder).
+  return { sharedText, oneLineInsight, appreciation, selfCare, adviceTip };
 }
 
 function stripFences(s: string): string {
