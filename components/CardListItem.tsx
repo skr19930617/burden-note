@@ -17,18 +17,14 @@ import {
   labelOf,
   labelsOf,
 } from "@/lib/constants";
+import type { Card as BurdenCardContract } from "@/lib/contracts";
 
-export type CardLite = {
-  id: string;
-  title: string;
-  category: string;
-  bearer: string;
-  weight: string;
-  depleted: string[];
-  sharing: string;
-  occurredAt: string;
-  author: { id: string; name: string; color: string | null };
-};
+// Page lists only need a subset of the contract Card. Pull the keys explicitly so any
+// rename in the contract surfaces here as a type error rather than a silent drift.
+export type CardLite = Pick<
+  BurdenCardContract,
+  "id" | "title" | "category" | "bearer" | "weight" | "depleted" | "sharing" | "occurredAt" | "author"
+>;
 
 export function CardListItem({ card, href }: { card: CardLite; href?: string }) {
   const target = href ?? `/cards/${card.id}`;

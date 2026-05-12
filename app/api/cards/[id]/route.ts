@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { cardPatchSchema } from "@/lib/validation";
-
-const JSON_ARRAY_FIELDS = ["loadTypes", "depleted", "needs"] as const;
+import { cardPatchRequestSchema, cardSingleResponseSchema } from "@/lib/contracts";
+import { toCard } from "@/lib/serialize";
 
 export async function GET(_req: Request, ctx: { params: { id: string } }) {
   const card = await prisma.burdenCard.findUnique({
@@ -10,18 +9,36 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
     include: { author: true },
   });
   if (!card) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ card: toApiCard(card) });
+  return NextResponse.json(
+    cardSingleResponseSchema.parse({ card: toCard(card, card.author) }),
+  );
 }
 
+type CardUpdateData = {
+  title?: string;
+  category?: string;
+  privateText?: string | null;
+  loadTypes?: string;
+  bearer?: string;
+  weight?: string;
+  depleted?: string;
+  visibility?: string;
+  needs?: string;
+  sharing?: string;
+  shareText?: string | null;
+  rephrasedAt?: Date | null;
+  occurredAt?: Date;
+};
+
 export async function PATCH(req: Request, ctx: { params: { id: string } }) {
-  const body = await req.json();
-  const parsed = cardPatchSchema.safeParse(body);
+  const body: unknown = await req.json();
+  const parsed = cardPatchRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const input = parsed.data;
 
-  const data: Record<string, unknown> = {};
+  const data: CardUpdateData = {};
   if (input.title !== undefined) data.title = input.title;
   if (input.category !== undefined) data.category = input.category;
   if (input.privateText !== undefined) data.privateText = input.privateText ?? null;
@@ -41,29 +58,14 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
   const card = await prisma.burdenCard.update({
     where: { id: ctx.params.id },
     data,
+    include: { author: true },
   });
-  return NextResponse.json({ card: toApiCard(card) });
+  return NextResponse.json(
+    cardSingleResponseSchema.parse({ card: toCard(card, card.author) }),
+  );
 }
 
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   await prisma.burdenCard.delete({ where: { id: ctx.params.id } });
   return NextResponse.json({ ok: true });
-}
-
-function toApiCard<T extends Record<string, unknown>>(card: T): T {
-  const out: Record<string, unknown> = { ...card };
-  for (const f of JSON_ARRAY_FIELDS) {
-    out[f] = safeParseArray(card[f]);
-  }
-  return out as T;
-}
-
-function safeParseArray(raw: unknown): string[] {
-  if (typeof raw !== "string") return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
 }

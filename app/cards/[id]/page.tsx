@@ -23,38 +23,30 @@ import {
   labelsOf,
 } from "@/lib/constants";
 import { AiChip } from "@/components/AiBadge";
+import {
+  cardSingleResponseSchema,
+  gratitudeSingleResponseSchema,
+  sharingSchema,
+  type Card,
+  type Sharing,
+} from "@/lib/contracts";
 
-type CardDetail = {
-  id: string;
-  title: string;
-  category: string;
-  privateText: string | null;
-  loadTypes: string[];
-  bearer: string;
-  weight: string;
-  depleted: string[];
-  visibility: string;
-  needs: string[];
-  sharing: string;
-  shareText: string | null;
-  appreciation: string | null;
-  selfCare: string | null;
-  adviceTip: string | null;
-  occurredAt: string;
-  author: { id: string; name: string };
-};
+type CardDetail = Card;
 
 export default function CardDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [card, setCard] = useState<CardDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Sharing | null>(null);
 
   useEffect(() => {
     fetch(`/api/cards/${params.id}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { card: CardDetail }) => setCard(d.card))
+      .then((raw: unknown) => {
+        const parsed = cardSingleResponseSchema.parse(raw);
+        setCard(parsed.card);
+      })
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -67,7 +59,7 @@ export default function CardDetailPage() {
   }
   if (!card) return <Typography>見つかりませんでした。</Typography>;
 
-  async function setSharing(stage: "private" | "candidate" | "shared") {
+  async function setSharing(stage: Sharing) {
     if (!card) return;
     setBusy(stage);
     const res = await fetch(`/api/cards/${card.id}`, {
@@ -76,8 +68,9 @@ export default function CardDetailPage() {
       body: JSON.stringify({ sharing: stage }),
     });
     if (res.ok) {
-      const d: { card: CardDetail } = await res.json();
-      setCard(d.card);
+      const raw: unknown = await res.json();
+      const parsed = cardSingleResponseSchema.parse(raw);
+      setCard(parsed.card);
     }
     setBusy(null);
   }
@@ -205,7 +198,7 @@ export default function CardDetailPage() {
           共有の状態
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          {(["private", "candidate", "shared"] as const).map((stage) => (
+          {sharingSchema.options.map((stage) => (
             <Button
               key={stage}
               variant={card.sharing === stage ? "contained" : "outlined"}
@@ -263,8 +256,18 @@ function SendAppreciationCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: draft.trim() }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error?.toString() ?? "送信に失敗しました");
+      const raw: unknown = await r.json();
+      if (!r.ok) {
+        const msg =
+          typeof raw === "object" &&
+          raw !== null &&
+          "error" in raw &&
+          typeof (raw as { error: unknown }).error === "string"
+            ? (raw as { error: string }).error
+            : "送信に失敗しました";
+        throw new Error(msg);
+      }
+      gratitudeSingleResponseSchema.parse(raw);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "送信に失敗しました");

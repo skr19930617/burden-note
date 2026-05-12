@@ -11,9 +11,23 @@ import {
   labelOf,
   labelsOf,
 } from "@/lib/constants";
-import { weeklyFeedbackTriggerSchema } from "@/lib/validation";
+import {
+  weeklyFeedbackBundleSchema,
+  weeklyFeedbackTriggerRequestSchema,
+  weeklyFeedbackTriggerResponseSchema,
+} from "@/lib/contracts";
+import { toWeeklyFeedback, toWeeklyPick } from "@/lib/serialize";
 
-// GET: return existing weekly feedback (per-user rows) + the shared pick + ack-self-report.
+function parseJsonArray(raw: string): string[] {
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const weekStartStr = url.searchParams.get("week");
@@ -21,6 +35,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "week is required (ISO date)" }, { status: 400 });
   }
   const weekStart = new Date(weekStartStr);
+  if (Number.isNaN(weekStart.getTime())) {
+    return NextResponse.json({ error: "invalid week date" }, { status: 400 });
+  }
 
   const [perUser, pick] = await Promise.all([
     prisma.weeklyFeedback.findMany({
@@ -29,17 +46,18 @@ export async function GET(req: Request) {
     }),
     prisma.weeklyPick.findUnique({ where: { weekStart } }),
   ]);
-  return NextResponse.json({
-    weekStart: weekStart.toISOString(),
-    perUser,
-    pick: pick ?? null,
-  });
+  return NextResponse.json(
+    weeklyFeedbackBundleSchema.parse({
+      weekStart: weekStart.toISOString(),
+      perUser: perUser.map(toWeeklyFeedback),
+      pick: pick ? toWeeklyPick(pick) : null,
+    }),
+  );
 }
 
-// POST: run the LLM and persist. Idempotent: replaces previous rows for the same week.
 export async function POST(req: Request) {
-  const body = await req.json();
-  const parsed = weeklyFeedbackTriggerSchema.safeParse(body);
+  const body: unknown = await req.json();
+  const parsed = weeklyFeedbackTriggerRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -78,18 +96,17 @@ export async function POST(req: Request) {
         authorName: c.author.name,
         title: c.title,
         category: labelOf(CATEGORIES, c.category),
-        loadTypes: labelsOf(LOAD_TYPES, safeParseArray(c.loadTypes)),
-        depleted: labelsOf(DEPLETED, safeParseArray(c.depleted)),
+        loadTypes: labelsOf(LOAD_TYPES, parseJsonArray(c.loadTypes)),
+        depleted: labelsOf(DEPLETED, parseJsonArray(c.depleted)),
         visibility: labelOf(VISIBILITY, c.visibility),
         weight: labelOf(WEIGHTS, c.weight),
-        needs: labelsOf(NEEDS, safeParseArray(c.needs)),
+        needs: labelsOf(NEEDS, parseJsonArray(c.needs)),
         shareText: c.shareText,
       })),
       pickedBurden: pick?.pickedBurden ?? null,
       previousNextMove: prevPick?.nextMove ?? null,
     });
 
-    // Replace per-user rows for this week; preserve feltAcknowledged across re-runs.
     const existing = await prisma.weeklyFeedback.findMany({ where: { weekStart } });
     const ackByUser = new Map(existing.map((e) => [e.userId, e.feltAcknowledged]));
 
@@ -127,23 +144,16 @@ export async function POST(req: Request) {
     });
     const refreshedPick = await prisma.weeklyPick.findUnique({ where: { weekStart } });
 
-    return NextResponse.json({
-      adapter: adapter.name,
-      weekStart: weekStart.toISOString(),
-      perUser: refreshed,
-      pick: refreshedPick,
-    });
+    return NextResponse.json(
+      weeklyFeedbackTriggerResponseSchema.parse({
+        adapter: adapter.name,
+        weekStart: weekStart.toISOString(),
+        perUser: refreshed.map(toWeeklyFeedback),
+        pick: refreshedPick ? toWeeklyPick(refreshedPick) : null,
+      }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown LLM error";
     return NextResponse.json({ error: msg, adapter: adapter.name }, { status: 502 });
-  }
-}
-
-function safeParseArray(raw: string): string[] {
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
   }
 }

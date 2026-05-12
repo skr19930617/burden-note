@@ -12,23 +12,15 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { AiChip } from "./AiBadge";
 import { useMe } from "./UserContext";
+import {
+  feltAcknowledgedSchema,
+  weeklyFeedbackBundleSchema,
+  type FeltAcknowledged,
+  type WeeklyFeedback,
+  type WeeklyPick,
+} from "@/lib/contracts";
 
-type WeeklyFeedback = {
-  id: string;
-  weekStart: string;
-  userId: string;
-  observation: string;
-  gentleNotice: string;
-  feltAcknowledged: string | null;
-  user?: { id: string; name: string };
-};
-
-type Pick = {
-  id: string;
-  weekStart: string;
-  whatWorked: string | null;
-  nextMove: string | null;
-};
+type Pick = WeeklyPick;
 
 export function WeeklyFeedbackPanel({ weekStart }: { weekStart: string }) {
   const me = useMe();
@@ -44,9 +36,10 @@ export function WeeklyFeedbackPanel({ weekStart }: { weekStart: string }) {
     const r = await fetch(`/api/weekly/feedback?week=${encodeURIComponent(weekStart)}`, {
       cache: "no-store",
     });
-    const d: { perUser: WeeklyFeedback[]; pick: Pick | null } = await r.json();
-    setPerUser(d.perUser);
-    setPick(d.pick);
+    const raw: unknown = await r.json();
+    const parsed = weeklyFeedbackBundleSchema.parse(raw);
+    setPerUser(parsed.perUser);
+    setPick(parsed.pick);
     setLoading(false);
   }, [weekStart]);
 
@@ -73,7 +66,7 @@ export function WeeklyFeedbackPanel({ weekStart }: { weekStart: string }) {
     }
   }
 
-  async function setAck(value: string | null) {
+  async function setAck(value: FeltAcknowledged | null) {
     if (!me) return;
     await fetch(
       `/api/weekly/feedback/${me.id}?week=${encodeURIComponent(weekStart)}`,
@@ -230,7 +223,14 @@ export function WeeklyFeedbackPanel({ weekStart }: { weekStart: string }) {
                 exclusive
                 size="small"
                 value={myFeedback.feltAcknowledged ?? ""}
-                onChange={(_, v: string | null) => setAck(v)}
+                onChange={(_, v: string | null) => {
+                  if (v === null) {
+                    void setAck(null);
+                    return;
+                  }
+                  const parsed = feltAcknowledgedSchema.safeParse(v);
+                  if (parsed.success) void setAck(parsed.data);
+                }}
               >
                 <ToggleButton value="yes">あった</ToggleButton>
                 <ToggleButton value="a_little">少しは</ToggleButton>

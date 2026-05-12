@@ -22,31 +22,15 @@ import {
   SHARED_VISIBILITY_LABELS,
   labelOf,
 } from "@/lib/constants";
+import {
+  cardListResponseSchema,
+  gratitudeListResponseSchema,
+  type Card,
+  type Gratitude,
+  type LoadType,
+} from "@/lib/contracts";
 
-type SharedCard = {
-  id: string;
-  title: string;
-  category: string;
-  loadTypes: string[];
-  bearer: string;
-  weight: string;
-  depleted: string[];
-  visibility: string;
-  needs: string[];
-  shareText: string | null;
-  occurredAt: string;
-  author: { id: string; name: string };
-};
-
-type Gratitude = {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  text: string;
-  source: string;
-  acknowledgedAt: string | null;
-  createdAt: string;
-};
+type SharedCard = Card;
 
 export default function SharedPage() {
   const { users } = useUserContext();
@@ -60,16 +44,16 @@ export default function SharedPage() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const [c, g] = await Promise.all([
+    const [rawCards, rawGrats] = await Promise.all([
       fetch(`/api/cards?sharing=shared&since=${encodeURIComponent(sinceIso)}`, {
         cache: "no-store",
-      }).then((r) => r.json()),
+      }).then((r) => r.json() as Promise<unknown>),
       fetch(`/api/gratitudes?since=${encodeURIComponent(sinceIso)}`, {
         cache: "no-store",
-      }).then((r) => r.json()),
+      }).then((r) => r.json() as Promise<unknown>),
     ]);
-    setCards(c.cards);
-    setGratitudes(g.gratitudes);
+    setCards(cardListResponseSchema.parse(rawCards).cards);
+    setGratitudes(gratitudeListResponseSchema.parse(rawGrats).gratitudes);
     setLoading(false);
   }, [sinceIso]);
 
@@ -196,7 +180,7 @@ function BurdenTypeMatrix({
   // Use LOAD_TYPES as rows now — the spec says burden type, not depleted resources.
   if (cards.length === 0 || users.length === 0) return null;
 
-  function intensity(userId: string, loadKey: string): number {
+  function intensity(userId: string, loadKey: LoadType): number {
     let sum = 0;
     for (const c of cards) {
       if (c.author.id !== userId) continue;

@@ -25,17 +25,14 @@ import {
   labelOf,
   labelsOf,
 } from "@/lib/constants";
+import {
+  cardListResponseSchema,
+  cardSingleResponseSchema,
+  rephraseResponseSchema,
+  type Card,
+} from "@/lib/contracts";
 
-type CardDetail = CardLite & {
-  privateText: string | null;
-  loadTypes: string[];
-  visibility: string;
-  needs: string[];
-  shareText: string | null;
-  appreciation: string | null;
-  selfCare: string | null;
-  adviceTip: string | null;
-};
+type CardDetail = Card;
 
 export default function SharePage() {
   return (
@@ -72,8 +69,9 @@ function ShareInner() {
     if (!me) return;
     const qs = new URLSearchParams({ authorId: me.id, sharing: "candidate" });
     const r = await fetch(`/api/cards?${qs}`, { cache: "no-store" });
-    const d: { cards: CardLite[] } = await r.json();
-    setCandidates(d.cards);
+    const raw: unknown = await r.json();
+    const parsed = cardListResponseSchema.parse(raw);
+    setCandidates(parsed.cards);
   }, [me]);
 
   useEffect(() => {
@@ -87,17 +85,19 @@ function ShareInner() {
     }
     fetch(`/api/cards/${focusId}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { card: CardDetail }) => {
-        setActive(d.card);
-        setDraft(d.card.shareText ?? "");
-        setAppreciation(d.card.appreciation ?? "");
-        setSelfCare(d.card.selfCare ?? "");
-        setAdviceTip(d.card.adviceTip ?? "");
+      .then((raw: unknown) => {
+        const parsed = cardSingleResponseSchema.parse(raw);
+        const c = parsed.card;
+        setActive(c);
+        setDraft(c.shareText ?? "");
+        setAppreciation(c.appreciation ?? "");
+        setSelfCare(c.selfCare ?? "");
+        setAdviceTip(c.adviceTip ?? "");
         setInsight(null);
         setError(null);
         // On first visit (right after pressing "候補にする") auto-run AI rather than wait for click.
-        if (!d.card.shareText) {
-          void runRephrase(d.card.id);
+        if (!c.shareText) {
+          void runRephrase(c.id);
         }
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,14 +108,21 @@ function ShareInner() {
     setError(null);
     try {
       const r = await fetch(`/api/cards/${cardId}/rephrase`, { method: "POST" });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? "LLM 呼び出しに失敗しました");
-      setAdapter(d.adapter ?? null);
-      setDraft(d.sharedText);
-      setInsight(d.oneLineInsight);
-      setAppreciation(d.appreciation ?? "");
-      setSelfCare(d.selfCare ?? "");
-      setAdviceTip(d.adviceTip ?? "");
+      const raw: unknown = await r.json();
+      if (!r.ok) {
+        const msg =
+          typeof raw === "object" && raw !== null && "error" in raw && typeof (raw as { error: unknown }).error === "string"
+            ? (raw as { error: string }).error
+            : "LLM 呼び出しに失敗しました";
+        throw new Error(msg);
+      }
+      const parsed = rephraseResponseSchema.parse(raw);
+      setAdapter(parsed.adapter);
+      setDraft(parsed.sharedText);
+      setInsight(parsed.oneLineInsight);
+      setAppreciation(parsed.appreciation);
+      setSelfCare(parsed.selfCare);
+      setAdviceTip(parsed.adviceTip);
     } catch (err) {
       setError(err instanceof Error ? err.message : "失敗しました");
     } finally {

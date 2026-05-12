@@ -116,11 +116,16 @@ export function CardForm({
         void save("private");
       }}
     >
-      <Section title="A. 今日しんどかったこと" help="1行でいい。あとから書き足せる。">
+      <Section
+        title="A. 今日しんどかったこと"
+        help="1行でも複数行でも書ける。短くてもいいし、思いついたまま並べてもいい。"
+      >
         <TextField
           fullWidth
-          size="small"
-          placeholder="例) 夜中に3回起きた / 妻が泣いていて声かけを探した"
+          multiline
+          minRows={2}
+          maxRows={8}
+          placeholder={`例)\n夜中に2回起きてミルクを作った\n寝かしつけに1時間以上かかった\n通院の予約と連絡をした`}
           value={value.title}
           onChange={(e) => patch("title", e.target.value)}
         />

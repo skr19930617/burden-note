@@ -1,12 +1,14 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  userListResponseSchema,
+  userSingleResponseSchema,
+  type User,
+} from "@/lib/contracts";
 
-export type UserSummary = {
-  id: string;
-  name: string;
-  color: string | null;
-};
+// The bits of a user the UI cares about. Keep the shape minimal and explicit.
+export type UserSummary = Pick<User, "id" | "name" | "color">;
 
 type State = {
   users: UserSummary[];
@@ -32,8 +34,9 @@ export function UserContextProvider({ children }: { children: React.ReactNode })
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/users", { cache: "no-store" });
-    const data: { users: UserSummary[] } = await res.json();
-    setUsers(data.users);
+    const raw: unknown = await res.json();
+    const data = userListResponseSchema.parse(raw);
+    setUsers(data.users.map((u) => ({ id: u.id, name: u.name, color: u.color })));
     // Resolve "me" from localStorage; fall back to the first user.
     const stored = typeof window !== "undefined" ? localStorage.getItem(LS_KEY) : null;
     const meFromStore = stored && data.users.find((u) => u.id === stored)?.id;
@@ -69,9 +72,10 @@ export function UserContextProvider({ children }: { children: React.ReactNode })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      const data: { user: UserSummary } = await res.json();
+      const raw: unknown = await res.json();
+      const data = userSingleResponseSchema.parse(raw);
       await refresh();
-      return data.user;
+      return { id: data.user.id, name: data.user.name, color: data.user.color };
     },
     [refresh],
   );

@@ -13,14 +13,13 @@ import Chip from "@mui/material/Chip";
 import { REDUCE_TARGETS, NEXT_ACTIONS, labelOf } from "@/lib/constants";
 import { WeeklyFeedbackPanel } from "@/components/WeeklyFeedbackPanel";
 import { WeeklyCharts } from "@/components/WeeklyCharts";
+import {
+  weeklyPickListResponseSchema,
+  weeklyPickSingleResponseSchema,
+  type WeeklyPick,
+} from "@/lib/contracts";
 
-type Pick = {
-  id: string;
-  weekStart: string;
-  pickedBurden: string;
-  nextAction: string | null;
-  note: string | null;
-};
+type Pick = WeeklyPick;
 
 const CUSTOM = "__custom__";
 
@@ -38,9 +37,10 @@ export default function ReviewPage() {
   useEffect(() => {
     fetch("/api/weekly", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { picks: Pick[] }) => {
-        setPicks(d.picks);
-        const current = d.picks.find(
+      .then((raw: unknown) => {
+        const parsed = weeklyPickListResponseSchema.parse(raw);
+        setPicks(parsed.picks);
+        const current = parsed.picks.find(
           (p) => new Date(p.weekStart).toDateString() === weekStart.toDateString(),
         );
         if (current) {
@@ -74,12 +74,13 @@ export default function ReviewPage() {
       }),
     });
     if (res.ok) {
-      const d: { pick: Pick } = await res.json();
+      const raw: unknown = await res.json();
+      const parsed = weeklyPickSingleResponseSchema.parse(raw);
       setPicks((prev) => {
         const others = prev.filter(
           (p) => new Date(p.weekStart).toDateString() !== weekStart.toDateString(),
         );
-        return [d.pick, ...others].sort(
+        return [parsed.pick, ...others].sort(
           (a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime(),
         );
       });

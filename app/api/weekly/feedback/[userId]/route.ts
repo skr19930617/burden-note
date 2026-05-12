@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { weeklyFeedbackPatchSchema } from "@/lib/validation";
+import {
+  weeklyFeedbackPatchRequestSchema,
+  weeklyFeedbackPatchResponseSchema,
+} from "@/lib/contracts";
+import { toWeeklyFeedback } from "@/lib/serialize";
 
-// PATCH the per-user weekly feedback (only the user's self-report fields).
 export async function PATCH(
   req: Request,
   ctx: { params: { userId: string } },
@@ -13,8 +16,11 @@ export async function PATCH(
     return NextResponse.json({ error: "week query param required" }, { status: 400 });
   }
   const weekStart = new Date(weekStartStr);
-  const body = await req.json();
-  const parsed = weeklyFeedbackPatchSchema.safeParse(body);
+  if (Number.isNaN(weekStart.getTime())) {
+    return NextResponse.json({ error: "invalid week date" }, { status: 400 });
+  }
+  const body: unknown = await req.json();
+  const parsed = weeklyFeedbackPatchRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -28,5 +34,7 @@ export async function PATCH(
     where: { id: wf.id },
     data: { feltAcknowledged: parsed.data.feltAcknowledged ?? null },
   });
-  return NextResponse.json({ feedback: updated });
+  return NextResponse.json(
+    weeklyFeedbackPatchResponseSchema.parse({ feedback: toWeeklyFeedback(updated) }),
+  );
 }

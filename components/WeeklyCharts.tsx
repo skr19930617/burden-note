@@ -16,33 +16,15 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
+import {
+  insightsResponseSchema,
+  type InsightsResponse,
+  type ReducePoint,
+  type VisibilityPoint,
+  type GratitudePoint,
+} from "@/lib/contracts";
 
-type ReducePoint = {
-  weekStart: string;
-  pickedBurden: string | null;
-  pickedBurdenLabel: string | null;
-  intensity: number;
-};
-
-type VisibilityPoint = {
-  weekStart: string;
-  total: number;
-  invisible: number;
-  ratio: number | null;
-};
-
-type GratitudePoint = {
-  weekStart: string;
-  perUser: Record<string, { sent: number; ackReceived: number }>;
-};
-
-type Insights = {
-  weeks: string[];
-  users: { id: string; name: string }[];
-  reduceSeries: ReducePoint[];
-  visibilitySeries: VisibilityPoint[];
-  gratitudeSeries: GratitudePoint[];
-};
+type Insights = InsightsResponse;
 
 // Soft palette to keep charts feeling like a notebook, not a dashboard.
 const COLORS = {
@@ -59,7 +41,7 @@ export function WeeklyCharts({ weeks = 8 }: { weeks?: number }) {
     setLoading(true);
     fetch(`/api/insights/weekly?weeks=${weeks}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: Insights) => setData(d))
+      .then((raw: unknown) => setData(insightsResponseSchema.parse(raw)))
       .finally(() => setLoading(false));
   }, [weeks]);
 
@@ -107,8 +89,8 @@ function ReduceChart({ series }: { series: ReducePoint[] }) {
               <YAxis tick={{ fontSize: 11, fill: "#6f6753" }} width={28} allowDecimals={false} />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: "#dad5c8" }}
-                formatter={(value: number) => [`${value}`, "重さ"]}
-                labelFormatter={(l: string) => `${l} の週`}
+                formatter={(value) => [`${value}`, "重さ"]}
+                labelFormatter={(label) => `${String(label ?? "")} の週`}
               />
               <Line
                 type="monotone"
@@ -202,10 +184,10 @@ function GratitudeChart({
               <YAxis tick={{ fontSize: 11, fill: "#6f6753" }} width={28} allowDecimals={false} />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: "#dad5c8" }}
-                labelFormatter={(l: string) => `${l} の週`}
-                formatter={(value: number, name: string) => {
-                  const u = users.find((x) => x.id === name);
-                  return [`${value}`, u ? `${u.name} が受け取った` : name];
+                labelFormatter={(label) => `${String(label ?? "")} の週`}
+                formatter={(value, name) => {
+                  const u = users.find((x) => x.id === String(name));
+                  return [`${value ?? 0}`, u ? `${u.name} が受け取った` : String(name ?? "")];
                 }}
               />
               {users.map((u, i) => (

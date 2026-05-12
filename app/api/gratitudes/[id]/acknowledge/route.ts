@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { gratitudeAckRequestSchema, gratitudeSingleResponseSchema } from "@/lib/contracts";
+import { toGratitude } from "@/lib/serialize";
 
-// Toggle ack. The receiver toggles this when they actually feel it landed.
 export async function POST(req: Request, ctx: { params: { id: string } }) {
-  let body: { acked?: boolean } = {};
+  let raw: unknown = {};
   try {
-    body = await req.json();
+    raw = await req.json();
   } catch {
-    body = {};
+    raw = {};
   }
-  const acked = body.acked ?? true;
+  const parsed = gratitudeAckRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
   const g = await prisma.gratitude.update({
     where: { id: ctx.params.id },
-    data: { acknowledgedAt: acked ? new Date() : null },
+    data: { acknowledgedAt: parsed.data.acked ? new Date() : null },
   });
-  return NextResponse.json({ gratitude: g });
+  return NextResponse.json(
+    gratitudeSingleResponseSchema.parse({ gratitude: toGratitude(g) }),
+  );
 }

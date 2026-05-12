@@ -1,18 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { userCreateSchema } from "@/lib/validation";
+import { userPatchRequestSchema, userSingleResponseSchema } from "@/lib/contracts";
+import { toUser } from "@/lib/serialize";
 
 export async function PATCH(req: Request, ctx: { params: { id: string } }) {
-  const body = await req.json();
-  const parsed = userCreateSchema.partial().safeParse(body);
+  const body: unknown = await req.json();
+  const parsed = userPatchRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
+  const data: { name?: string; color?: string | null } = {};
+  if (parsed.data.name !== undefined) data.name = parsed.data.name;
+  if (parsed.data.color !== undefined) data.color = parsed.data.color ?? null;
+
   const user = await prisma.user.update({
     where: { id: ctx.params.id },
-    data: parsed.data,
+    data,
   });
-  return NextResponse.json({ user });
+  return NextResponse.json(
+    userSingleResponseSchema.parse({ user: toUser(user) }),
+  );
 }
 
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {

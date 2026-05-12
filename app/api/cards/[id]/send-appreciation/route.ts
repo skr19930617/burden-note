@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendAppreciationSchema } from "@/lib/validation";
+import { gratitudeSingleResponseSchema, sendAppreciationRequestSchema } from "@/lib/contracts";
+import { toGratitude } from "@/lib/serialize";
 
-// Take an AI-generated (or user-edited) appreciation line and send it as a real
-// Gratitude row to the partner. Marked source="ai_draft" for later analysis.
 export async function POST(req: Request, ctx: { params: { id: string } }) {
-  const body = await req.json();
-  const parsed = sendAppreciationSchema.safeParse(body);
+  const body: unknown = await req.json();
+  const parsed = sendAppreciationRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -16,12 +15,13 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   });
   if (!card) return NextResponse.json({ error: "card not found" }, { status: 404 });
 
-  // The appreciation flows FROM the writer TO the partner.
   const partner = await prisma.user.findFirst({
     where: { NOT: { id: card.authorId } },
     orderBy: { createdAt: "asc" },
   });
-  if (!partner) return NextResponse.json({ error: "partner user not found" }, { status: 400 });
+  if (!partner) {
+    return NextResponse.json({ error: "partner user not found" }, { status: 400 });
+  }
 
   const g = await prisma.gratitude.create({
     data: {
@@ -32,5 +32,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
       source: "ai_draft",
     },
   });
-  return NextResponse.json({ gratitude: g });
+  return NextResponse.json(
+    gratitudeSingleResponseSchema.parse({ gratitude: toGratitude(g) }),
+  );
 }

@@ -1,7 +1,27 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getLlmAdapter } from "@/lib/llm";
-import { CATEGORIES, DEPLETED, LOAD_TYPES, labelOf, labelsOf } from "@/lib/constants";
+import {
+  CATEGORIES,
+  DEPLETED,
+  LOAD_TYPES,
+  NEEDS,
+  VISIBILITY,
+  WEIGHTS,
+  labelOf,
+  labelsOf,
+} from "@/lib/constants";
+import { rephraseResponseSchema } from "@/lib/contracts";
+
+function parseJsonArray(raw: string): string[] {
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
 
 export async function POST(_req: Request, ctx: { params: { id: string } }) {
   const card = await prisma.burdenCard.findUnique({
@@ -16,9 +36,9 @@ export async function POST(_req: Request, ctx: { params: { id: string } }) {
   });
 
   const adapter = getLlmAdapter();
-  const loadTypes = safeParseArray(card.loadTypes);
-  const depleted = safeParseArray(card.depleted);
-  const needs = safeParseArray(card.needs);
+  const loadTypes = parseJsonArray(card.loadTypes);
+  const depleted = parseJsonArray(card.depleted);
+  const needs = parseJsonArray(card.needs);
 
   try {
     const result = await adapter.rephraseForShare({
@@ -29,10 +49,10 @@ export async function POST(_req: Request, ctx: { params: { id: string } }) {
       privateText: card.privateText,
       loadTypes: labelsOf(LOAD_TYPES, loadTypes),
       bearer: card.bearer,
-      weight: card.weight,
+      weight: labelOf(WEIGHTS, card.weight),
       depleted: labelsOf(DEPLETED, depleted),
-      visibility: card.visibility,
-      needs,
+      visibility: labelOf(VISIBILITY, card.visibility),
+      needs: labelsOf(NEEDS, needs),
     });
 
     await prisma.burdenCard.update({
@@ -46,25 +66,18 @@ export async function POST(_req: Request, ctx: { params: { id: string } }) {
       },
     });
 
-    return NextResponse.json({
-      adapter: adapter.name,
-      sharedText: result.sharedText,
-      oneLineInsight: result.oneLineInsight,
-      appreciation: result.appreciation,
-      selfCare: result.selfCare,
-      adviceTip: result.adviceTip,
-    });
+    return NextResponse.json(
+      rephraseResponseSchema.parse({
+        adapter: adapter.name,
+        sharedText: result.sharedText,
+        oneLineInsight: result.oneLineInsight,
+        appreciation: result.appreciation,
+        selfCare: result.selfCare,
+        adviceTip: result.adviceTip,
+      }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown LLM error";
     return NextResponse.json({ error: msg, adapter: adapter.name }, { status: 502 });
-  }
-}
-
-function safeParseArray(raw: string): string[] {
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
   }
 }

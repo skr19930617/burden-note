@@ -8,6 +8,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { useMe } from "@/components/UserContext";
 import { CardListItem, type CardLite } from "@/components/CardListItem";
+import { cardListResponseSchema } from "@/lib/contracts";
 
 type Filter = "all" | "private" | "candidate" | "shared";
 
@@ -24,7 +25,10 @@ export default function CardsPage() {
     if (filter !== "all") qs.set("sharing", filter);
     fetch(`/api/cards?${qs.toString()}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { cards: CardLite[] }) => setCards(d.cards))
+      .then((raw: unknown) => {
+        const parsed = cardListResponseSchema.parse(raw);
+        setCards(parsed.cards);
+      })
       .finally(() => setLoading(false));
   }, [me, filter]);
 
