@@ -9,6 +9,8 @@ import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
+import TextField from "@mui/material/TextField";
+import Alert from "@mui/material/Alert";
 import {
   CATEGORIES,
   LOAD_TYPES,
@@ -177,27 +179,7 @@ export default function CardDetailPage() {
       )}
 
       {card.appreciation && (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: 3,
-            borderColor: "secondary.main",
-            bgcolor: "rgba(138, 160, 145, 0.08)",
-          }}
-        >
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <Typography variant="h3" sx={{ color: "secondary.dark" }}>
-              相手への労いの一言
-            </Typography>
-            <AiChip
-              label="AI 提案"
-              tooltip="AI があなたの入力をもとに、相手に渡せる労いの一言を提案しました。"
-            />
-          </Stack>
-          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
-            {card.appreciation}
-          </Typography>
-        </Paper>
+        <SendAppreciationCard cardId={card.id} appreciation={card.appreciation} />
       )}
 
       {card.adviceTip && (
@@ -256,6 +238,103 @@ export default function CardDetailPage() {
         )}
       </Paper>
     </Stack>
+  );
+}
+
+function SendAppreciationCard({
+  cardId,
+  appreciation,
+}: {
+  cardId: string;
+  appreciation: string;
+}) {
+  const [draft, setDraft] = useState(appreciation);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  async function send() {
+    setSending(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/cards/${cardId}/send-appreciation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: draft.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.toString() ?? "送信に失敗しました");
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "送信に失敗しました");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 3,
+        borderColor: "secondary.main",
+        bgcolor: "rgba(138, 160, 145, 0.08)",
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography variant="h3" sx={{ color: "secondary.dark" }}>
+          相手への労いの一言
+        </Typography>
+        <AiChip
+          label="AI 提案"
+          tooltip="AI があなたの入力をもとに、相手に渡せる労いの一言を提案しました。"
+        />
+      </Stack>
+
+      {!editing ? (
+        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 1 }}>
+          {draft}
+        </Typography>
+      ) : (
+        <TextField
+          fullWidth
+          multiline
+          minRows={3}
+          sx={{ mt: 1 }}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+      )}
+
+      {error && (
+        <Alert severity="error" sx={{ mt: 1.5 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ mt: 2 }}>
+        {!sent && (
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? "編集をやめる" : "手で直す"}
+          </Button>
+        )}
+        <Button
+          size="small"
+          variant="contained"
+          color="secondary"
+          disableElevation
+          disabled={sending || sent || !draft.trim()}
+          onClick={send}
+        >
+          {sent ? "送信済み" : sending ? "送信中…" : "この一言を送る"}
+        </Button>
+      </Stack>
+    </Paper>
   );
 }
 

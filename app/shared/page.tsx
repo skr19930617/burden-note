@@ -43,6 +43,8 @@ type Gratitude = {
   fromUserId: string;
   toUserId: string;
   text: string;
+  source: string;
+  acknowledgedAt: string | null;
   createdAt: string;
 };
 
@@ -95,6 +97,11 @@ export default function SharedPage() {
 
       {!loading && (
         <>
+          <GratitudeInbox
+            gratitudes={gratitudes}
+            meId={me.id}
+            onChanged={() => void reload()}
+          />
           <HeavyLoadTypes cards={cards} />
           <ThisWeekTop cards={cards} />
           <BurdenTypeMatrix cards={cards} users={users} />
@@ -409,6 +416,77 @@ function GratitudeCandidates({
           </Stack>
         </Box>
       )}
+    </SectionPaper>
+  );
+}
+
+function GratitudeInbox({
+  gratitudes,
+  meId,
+  onChanged,
+}: {
+  gratitudes: Gratitude[];
+  meId: string;
+  onChanged: () => void;
+}) {
+  // Show gratitudes received by me, with an ack toggle.
+  const received = gratitudes.filter((g) => g.toUserId === meId);
+  if (received.length === 0) return null;
+
+  async function setAck(g: Gratitude, acked: boolean) {
+    await fetch(`/api/gratitudes/${g.id}/acknowledge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acked }),
+    });
+    onChanged();
+  }
+
+  return (
+    <SectionPaper
+      title="あなたに届いた言葉"
+      help="相手から送られた「ありがとう」。ちゃんと届いたと感じたら「受け取った」を押してください (グラフはここをカウントします)。"
+    >
+      <Stack spacing={1}>
+        {received.slice(0, 10).map((g) => {
+          const acked = !!g.acknowledgedAt;
+          return (
+            <Stack
+              key={g.id}
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              spacing={1}
+              sx={{
+                p: 1.5,
+                border: "1px solid",
+                borderColor: acked ? "secondary.main" : "divider",
+                borderRadius: 1.5,
+                bgcolor: acked ? "rgba(138, 160, 145, 0.08)" : "background.paper",
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {g.text}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(g.createdAt).toLocaleString("ja-JP")}
+                  {g.source === "ai_draft" && " · AI ドラフトから送信"}
+                </Typography>
+              </Box>
+              <Button
+                size="small"
+                variant={acked ? "outlined" : "contained"}
+                color={acked ? "secondary" : "primary"}
+                disableElevation
+                onClick={() => setAck(g, !acked)}
+              >
+                {acked ? "受け取り済み" : "受け取った"}
+              </Button>
+            </Stack>
+          );
+        })}
+      </Stack>
     </SectionPaper>
   );
 }

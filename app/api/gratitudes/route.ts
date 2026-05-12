@@ -5,14 +5,20 @@ import { gratitudeSchema } from "@/lib/validation";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const toUserId = url.searchParams.get("toUserId");
+  const fromUserId = url.searchParams.get("fromUserId");
   const since = url.searchParams.get("since");
+  const onlyAcked = url.searchParams.get("acked") === "true";
+
   const where: Record<string, unknown> = {};
   if (toUserId) where.toUserId = toUserId;
+  if (fromUserId) where.fromUserId = fromUserId;
   if (since) where.createdAt = { gte: new Date(since) };
+  if (onlyAcked) where.acknowledgedAt = { not: null };
+
   const gratitudes = await prisma.gratitude.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    take: 100,
+    take: 200,
   });
   return NextResponse.json({ gratitudes });
 }

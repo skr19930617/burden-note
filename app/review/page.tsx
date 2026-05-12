@@ -11,6 +11,8 @@ import TextField from "@mui/material/TextField";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import { REDUCE_TARGETS, NEXT_ACTIONS, labelOf } from "@/lib/constants";
+import { WeeklyFeedbackPanel } from "@/components/WeeklyFeedbackPanel";
+import { WeeklyCharts } from "@/components/WeeklyCharts";
 
 type Pick = {
   id: string;
@@ -95,6 +97,10 @@ export default function ReviewPage() {
           {format(weekStart, "yyyy/M/d (E)", { locale: ja })} の週。減らす負担は1つだけ選ぶ。
         </Typography>
       </Box>
+
+      <WeeklyFeedbackPanel weekStart={weekStart.toISOString()} />
+
+      <WeeklyCharts weeks={8} />
 
       <Paper variant="outlined" sx={{ p: 3, borderColor: "divider" }}>
         <Stack spacing={2.5}>

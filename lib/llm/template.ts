@@ -2,10 +2,20 @@
 // Composes a soft share-text from the structured fields using simple templates.
 // Quality is lower than LLM output but the contract is identical.
 
-import type { LlmAdapter, RephraseInput, RephraseOutput } from "./types";
+import type {
+  LlmAdapter,
+  RephraseInput,
+  RephraseOutput,
+  WeeklyFeedbackInput,
+  WeeklyFeedbackOutput,
+} from "./types";
 
 export class TemplateAdapter implements LlmAdapter {
   readonly name = "template";
+
+  async weeklyFeedback(input: WeeklyFeedbackInput): Promise<WeeklyFeedbackOutput> {
+    return templateWeeklyFeedback(input);
+  }
 
   async rephraseForShare(input: RephraseInput): Promise<RephraseOutput> {
     const depleted = input.depleted.length ? input.depleted.join("・") : null;
@@ -98,6 +108,41 @@ function selfCareFor(input: RephraseInput): string {
       : `${who}、${depleted} が削れていたのに、ちゃんと自分で気づけたんだね。それを書き残せたこと自体が、今日の自分への手当てになっている。`;
   }
   return `${who}、今日のこの負担を書き留めようと思えたこと、すでに自分への労りになってるよ。`;
+}
+
+// Template-mode weekly feedback. No API access, so produce a minimal, honest stub:
+// counts what's there and gestures toward the most-pressed type. Real warmth comes from xAI.
+export async function templateWeeklyFeedback(input: WeeklyFeedbackInput): Promise<WeeklyFeedbackOutput> {
+  const perUser = input.users.map((u) => {
+    const own = input.cards.filter((c) => c.authorId === u.id);
+    const top = topLabel(own.flatMap((c) => c.loadTypes));
+    const observation = own.length
+      ? `今週 ${u.name} は ${own.length} 件の負担を共有した。中でも「${top ?? own[0].title}」が中心になっていたように見える。`
+      : `今週 ${u.name} は shared に出した負担はなかった。書き留めるだけにとどめていた可能性がある。`;
+    const gentleNotice = top
+      ? `「${top}」が継続するときは、本人より先に身体の方が先に削れることがある。`
+      : `負担が表に出ていない週でも、見えにくい疲れは積み上がりやすい。`;
+    return { userId: u.id, observation, gentleNotice };
+  });
+
+  const allTop = topLabel(input.cards.flatMap((c) => c.loadTypes));
+  const whatWorked = input.cards.length
+    ? `今週も両者が負担を「自分の中だけで終わらせず」、shared に出すところまで届けられていた。`
+    : `今週は静かに過ぎた週だった。それ自体が小さく良かったことかもしれない。`;
+  const nextMove = input.pickedBurden
+    ? `「${input.pickedBurden}」について、今週中に1回だけ具体的な分担を決めて試してみる。`
+    : allTop
+      ? `「${allTop}」が連続しているので、来週はこの種類の負担を1つだけ意識的に減らす提案を1つ出してみる。`
+      : `お互いに「今週はどんな1日を望むか」を月曜に1行ずつ書く。`;
+
+  return { perUser, shared: { whatWorked, nextMove } };
+}
+
+function topLabel(labels: string[]): string | null {
+  if (labels.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const l of labels) counts.set(l, (counts.get(l) ?? 0) + 1);
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 function adviceTipFor(input: RephraseInput): string {

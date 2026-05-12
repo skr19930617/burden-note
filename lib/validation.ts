@@ -31,6 +31,7 @@ export const gratitudeSchema = z.object({
   toUserId: z.string().min(1),
   text: z.string().min(1).max(400),
   cardId: z.string().optional().nullable(),
+  source: z.enum(["button", "ai_draft", "manual"]).default("button"),
 });
 
 export const weeklyPickSchema = z.object({
@@ -38,4 +39,16 @@ export const weeklyPickSchema = z.object({
   pickedBurden: z.string().min(1),
   nextAction: z.string().optional().nullable(),
   note: z.string().max(1000).optional().nullable(),
+});
+
+export const weeklyFeedbackTriggerSchema = z.object({
+  weekStart: z.string().datetime(),
+});
+
+export const weeklyFeedbackPatchSchema = z.object({
+  feltAcknowledged: z.enum(["none", "a_little", "yes"]).optional().nullable(),
+});
+
+export const sendAppreciationSchema = z.object({
+  text: z.string().min(1).max(400),
 });
